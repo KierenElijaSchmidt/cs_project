@@ -238,7 +238,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("🧠 Brain Tumor MRI Classification")
-st.markdown("Upload MRI brain scans to classify tumor types using EfficientNetB0.")
+st.markdown("Upload MRI brain scans to classify tumor types using a custom CNN.")
 
 # Sidebar info
 with st.sidebar:
@@ -246,7 +246,7 @@ with st.sidebar:
     st.markdown("""
     **Brain Tumor Classification**
 
-    This app uses an EfficientNetB0 model to classify brain MRI scans into:
+    This app uses a custom CNN model to classify brain MRI scans into:
     - **No Tumor** - healthy scan
     - **Meningioma** - usually benign
     - **Pituitary** - pituitary gland tumor
@@ -882,6 +882,6 @@ with tab3:
 # Footer
 st.markdown("---")
 st.markdown(
-    "<small>Model: EfficientNetB0 trained on Brain Tumor MRI Dataset | ⚠️ For educational purposes only</small>",
+    "<small>Model: Custom CNN trained on Brain Tumor MRI Dataset | ⚠️ For educational purposes only</small>",
     unsafe_allow_html=True
 )
