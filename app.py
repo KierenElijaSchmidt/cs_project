@@ -19,10 +19,30 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 # Test data path
 TEST_DATA_PATH = Path(__file__).parent / "data" / "brain-tumor-mri-dataset" / "Testing"
 
+# Custom color definitions - used consistently across all visualizations
+TUMOR_COLORS = {
+    'notumor': '#1d3827',      # Dark green
+    'meningioma': '#1c2d43',   # Dark blue
+    'pituitary': '#3d3b12',    # Dark yellow/olive
+    'glioma': '#3c2427'        # Dark red/brown
+}
+
+def colored_box(tumor_type: str, content: str):
+    """Create a colored box with custom colors for tumor types."""
+    color = TUMOR_COLORS.get(tumor_type, '#333333')
+    st.markdown(
+        f"""
+        <div style="background-color: {color}; padding: 1rem; border-radius: 0.5rem; color: white; margin-bottom: 1rem;">
+        {content}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 def get_random_test_images(n: int) -> list:
     """Get n random images from test set with their true labels."""
     all_images = []
-    for class_name in ["glioma", "meningioma", "notumor", "pituitary"]:
+    for class_name in ["notumor", "meningioma", "pituitary", "glioma"]:
         class_dir = TEST_DATA_PATH / class_name
         if class_dir.exists():
             for img_path in class_dir.glob("*.jpg"):
@@ -58,8 +78,6 @@ def create_probability_bar(probabilities: dict, title: str = "Prediction Probabi
 
 def create_stacked_bar(probabilities: dict):
     """Create a 100% stacked bar chart for probabilities."""
-    # Medical-themed color palette
-    colors = {'glioma': '#E63946', 'meningioma': '#457B9D', 'notumor': '#2A9D8F', 'pituitary': '#F4A261'}
 
     fig = go.Figure()
     cumsum = 0
@@ -69,7 +87,7 @@ def create_stacked_bar(probabilities: dict):
             x=[prob],
             y=[''],
             orientation='h',
-            marker_color=colors.get(label, '#888888'),
+            marker_color=TUMOR_COLORS.get(label, '#888888'),
             text=f'{label}: {prob:.1%}' if prob > 0.05 else '',
             textposition='inside',
             hovertemplate=f'{label}: {prob:.1%}<extra></extra>'
@@ -87,15 +105,12 @@ def create_stacked_bar(probabilities: dict):
 
 def create_pie_chart(data: dict, title: str):
     """Create a pie chart."""
-    # Medical-themed color palette
-    colors = {'glioma': '#E63946', 'meningioma': '#457B9D', 'notumor': '#2A9D8F', 'pituitary': '#F4A261'}
-
     fig = px.pie(
         values=list(data.values()),
         names=list(data.keys()),
         title=title,
         color=list(data.keys()),
-        color_discrete_map=colors
+        color_discrete_map=TUMOR_COLORS
     )
     fig.update_traces(textposition='inside', textinfo='percent+label')
     fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
@@ -110,22 +125,20 @@ def generate_pdf_report(report_text: str, images: list, file_names: list, result
         def clean_text(text):
             # Remove emojis and special unicode characters
             text = re.sub(r'[^\x00-\x7F]+', '', text)  # Remove non-ASCII
-            # Remove markdown formatting
+            # Remove markdown formatting but preserve structure
             text = re.sub(r'#{1,6}\s', '', text)  # Remove headers
             text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # Remove bold
-            text = re.sub(r'\*(.+?)\*', r'\1', text)  # Remove italics
+            text = re.sub(r'\*(.+?)\*', r'\1', text)  # Remove italics (but not list bullets)
             text = re.sub(r'>\s', '', text)  # Remove blockquotes
-            text = re.sub(r'---', '', text)  # Remove horizontal lines
+            text = re.sub(r'---+', '', text)  # Remove horizontal lines
+            # Convert markdown bullets to simple dashes for better PDF formatting
+            text = re.sub(r'^-\s', '  - ', text, flags=re.MULTILINE)
             return text.strip()
 
         class PDF(FPDF):
             def header(self):
                 self.set_font('Arial', 'B', 18)
                 self.cell(0, 10, 'NeuroSight MRI Report', 0, 1, 'C')
-                self.set_font('Arial', 'I', 10)
-                # Get current date and time
-                current_datetime = datetime.now().strftime('%B %d, %Y at %I:%M %p')
-                self.cell(0, 5, f'Generated: {current_datetime}', 0, 1, 'C')
                 self.ln(5)
 
             def footer(self):
@@ -175,9 +188,13 @@ def generate_pdf_report(report_text: str, images: list, file_names: list, result
 
             pdf.ln(5)
 
-        # Return PDF as bytes
-        pdf_bytes = pdf.output()
-        return pdf_bytes if isinstance(pdf_bytes, bytes) else pdf_bytes.encode('latin-1')
+        # Return PDF as bytes (fpdf 1.7.2 returns string, needs encoding)
+        pdf_output = pdf.output(dest='S')
+        if isinstance(pdf_output, bytes):
+            return pdf_output
+        else:
+            # fpdf 1.7.2 returns str, encode to bytes
+            return pdf_output.encode('latin-1')
     except ImportError:
         raise ImportError("PDF generation requires 'fpdf' library. Install with: pip install fpdf")
     except Exception as e:
@@ -205,6 +222,21 @@ st.set_page_config(
     layout="wide"
 )
 
+# Disable any potential notification sounds with custom CSS
+st.markdown("""
+    <style>
+    /* Hide Streamlit notification toasts that might trigger sounds */
+    .stToast {
+        display: none !important;
+    }
+
+    /* Disable any audio elements */
+    audio {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 st.title("🧠 Brain Tumor MRI Classification")
 st.markdown("Upload MRI brain scans to classify tumor types using EfficientNetB0.")
 
@@ -215,10 +247,10 @@ with st.sidebar:
     **Brain Tumor Classification**
 
     This app uses an EfficientNetB0 model to classify brain MRI scans into:
-    - **Glioma** - malignant tumor
+    - **No Tumor** - healthy scan
     - **Meningioma** - usually benign
     - **Pituitary** - pituitary gland tumor
-    - **No Tumor** - healthy scan
+    - **Glioma** - malignant tumor
 
     ⚠️ For educational purposes only
     """)
@@ -249,7 +281,7 @@ with tab2:
     # Display and process test images if loaded
     if 'test_images' in st.session_state and st.session_state['test_images']:
         test_images = st.session_state['test_images']
-        st.markdown(f"**{len(test_images)} image(s) loaded**")
+        st.markdown(f"**{len(test_images)} {'image' if len(test_images) == 1 else 'images'} loaded**")
 
         with st.spinner("Processing images..."):
             # Load images
@@ -341,7 +373,7 @@ with tab2:
 
                 # Per-class accuracy
                 st.markdown("**Per-class Performance:**")
-                for tumor_type in ["glioma", "meningioma", "notumor", "pituitary"]:
+                for tumor_type in ["notumor", "meningioma", "pituitary", "glioma"]:
                     type_total = sum(1 for t in true_labels if t == tumor_type)
                     if type_total > 0:
                         type_correct = sum(1 for r, t in zip(results, true_labels) if t == tumor_type and r["label"] == tumor_type)
@@ -435,7 +467,7 @@ with tab1:
             st.warning("Maximum 10 images allowed. Only the first 10 will be processed.")
             uploaded_files = uploaded_files[:10]
 
-        st.markdown(f"**{len(uploaded_files)} image(s) uploaded**")
+        st.markdown(f"**{len(uploaded_files)} {'image' if len(uploaded_files) == 1 else 'images'} uploaded**")
 
         # Process button
         if st.button("Classify Images", type="primary", key="classify_btn_tab1"):
@@ -489,15 +521,8 @@ with tab1:
                         label = result["label"]
                         confidence = result["confidence"]
 
-                        # Color code based on tumor type (matching Tab 3)
-                        if label == "notumor":
-                            st.info(f"**{label.upper()}**\n\nConfidence: {confidence:.1%}")
-                        elif label == "glioma":
-                            st.success(f"**{label.upper()}**\n\nConfidence: {confidence:.1%}")
-                        elif label == "pituitary":
-                            st.warning(f"**{label.upper()}**\n\nConfidence: {confidence:.1%}")
-                        elif label == "meningioma":
-                            st.error(f"**{label.upper()}**\n\nConfidence: {confidence:.1%}")
+                        # Color code based on tumor type (using custom colors)
+                        colored_box(label, f"<strong>{label.upper()}</strong><br><br>Confidence: {confidence:.1%}")
 
                         # Probability bar chart
                         st.plotly_chart(create_stacked_bar(result["probabilities"]), use_container_width=True)
@@ -528,12 +553,12 @@ CRITICAL FORMATTING GUIDELINES:
 - Use proper title case for section headers (not ALL CAPS)
 - Use markdown formatting with ### for main sections
 - Add horizontal lines (---) between major sections for visual separation
-- Write in COMPLETE SENTENCES and PARAGRAPHS - NO bullet points or lists
-- Use professional medical narrative style throughout
+- Use bullet points for all content within each section
+- Each bullet point MUST start on a new line
+- Use markdown bullet format: "- " at the start of each line
+- Keep bullet points clear, concise, and professional
 - Add > blockquotes for important clinical notes
 - Keep formatting clean, professional, and easy to read
-- Prioritize medical functionality while maintaining aesthetic appeal
-- Every section should be written in flowing prose, not itemized lists
 
 """
                     context += "**MRI Analysis Results:**\n\n"
@@ -548,24 +573,36 @@ CRITICAL FORMATTING GUIDELINES:
                             context += ". "
                         context += "\n\n"
 
-                    context += """Generate a professional medical report with these sections. Use complete sentences and narrative paragraphs throughout:
+                    context += """Generate a professional medical report with these sections. Use bullet points for all content:
 
 ### Patient Scan Summary
-Write a brief narrative overview of all scans analyzed. Describe what was examined and the overall assessment in complete sentences.
+- List each scan analyzed with key findings
+- Include overall assessment
+- Note any patterns observed across multiple scans
 
 ### Findings
-Provide detailed findings for each scan with clinical observations. Write in paragraph form describing what the imaging reveals. Use complete sentences to explain the observations.
+- Provide detailed findings for each scan
+- Include clinical observations
+- Note confidence levels and any alternative diagnoses
+- Describe imaging characteristics
 
 ### Clinical Significance
-Explain in narrative form what these findings mean for patient care and prognosis. Discuss the implications using complete sentences and proper paragraph structure.
+- Explain what these findings mean for patient care
+- Discuss prognosis implications
+- Note urgency level if applicable
+- Highlight critical findings
 
 ### Recommendations
-Describe the recommended next steps, specialist referrals, and follow-up care needed. Write this as a coherent narrative with complete sentences explaining each recommendation and its rationale.
+- List recommended next steps
+- Specify specialist referrals needed
+- Outline follow-up care requirements
+- Include imaging recommendations
+- Note treatment considerations
 
 ### Medical Disclaimer
 > This analysis has been generated with AI assistance and requires review and validation by a qualified medical specialist before any clinical decisions are made.
 
-Write the entire report in professional medical narrative style with complete sentences. No bullet points or lists."""
+IMPORTANT: Use bullet points (- ) for ALL content in every section. Each bullet point must start on a new line."""
 
                     response = client.messages.create(
                         model="claude-sonnet-4-20250514",
@@ -589,38 +626,6 @@ Write the entire report in professional medical narrative style with complete se
                     st.session_state['messages_tab1'] = [
                         {"role": "assistant", "content": report_text}
                     ]
-
-            # Medical Report Section
-            st.markdown("---")
-            st.subheader("📋 Medical Report")
-
-            if 'tab1_report' in st.session_state and st.session_state['tab1_report']:
-                # Add PDF download button (single button that downloads directly)
-                col1, col2 = st.columns([4, 1])
-                with col2:
-                    try:
-                        # Get the latest report from chat history (last assistant message)
-                        latest_report = st.session_state['tab1_report']
-                        if 'messages_tab1' in st.session_state and len(st.session_state['messages_tab1']) > 0:
-                            # Get the last assistant message which is the most recent report
-                            for msg in reversed(st.session_state['messages_tab1']):
-                                if msg['role'] == 'assistant':
-                                    latest_report = msg['content']
-                                    break
-
-                        pdf_bytes = generate_pdf_report(latest_report, images, file_names, results)
-                        st.download_button(
-                            label="📄 Download PDF",
-                            data=pdf_bytes,
-                            file_name=f"neurosight_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                            mime="application/pdf",
-                            key="download_pdf_tab1",
-                            type="secondary"
-                        )
-                    except Exception as e:
-                        st.error(f"Error generating PDF: {str(e)}")
-            else:
-                st.info("Report will be generated automatically after classification.")
 
             # Chat interface for report editing
             st.markdown("---")
@@ -658,7 +663,8 @@ Write the entire report in professional medical narrative style with complete se
                             system_context = "You are a medical AI assistant helping refine a medical report. "
                             system_context += "The user can request edits, additions, or clarifications to the report. "
                             system_context += "When editing, provide the COMPLETE updated report with all sections, not just the changed parts. "
-                            system_context += "Maintain professional medical report formatting.\n\n"
+                            system_context += "IMPORTANT: Maintain bullet point formatting - use markdown bullets (- ) and each bullet MUST start on a new line. "
+                            system_context += "All content within sections should be in bullet point format.\n\n"
 
                             # Add all previous messages
                             for i, msg in enumerate(st.session_state.messages_tab1):
@@ -704,10 +710,48 @@ Write the entire report in professional medical narrative style with complete se
             else:
                 st.warning("API key not configured. Set ANTHROPIC_API_KEY in .env file.")
 
+            # PDF Download Section
+            if 'tab1_report' in st.session_state and st.session_state['tab1_report']:
+                st.markdown("---")
+                st.subheader("📄 Download Report as PDF")
+
+                try:
+                    # Get the latest report from chat history (last assistant message)
+                    latest_report = st.session_state['tab1_report']
+                    if 'messages_tab1' in st.session_state and len(st.session_state['messages_tab1']) > 0:
+                        # Get the last assistant message which is the most recent report
+                        for msg in reversed(st.session_state['messages_tab1']):
+                            if msg['role'] == 'assistant':
+                                latest_report = msg['content']
+                                break
+
+                    # Generate PDF and create download button
+                    with st.spinner("Generating PDF..."):
+                        pdf_bytes = generate_pdf_report(latest_report, images, file_names, results)
+
+                        if not pdf_bytes or len(pdf_bytes) == 0:
+                            st.error("PDF generation returned empty data. Please check the report content.")
+                        else:
+                            st.download_button(
+                                label="📄 Download PDF Report",
+                                data=pdf_bytes,
+                                file_name=f"neurosight_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                                mime="application/pdf",
+                                key="download_pdf_tab1",
+                                type="primary",
+                                use_container_width=True
+                            )
+                            st.success(f"PDF ready! Size: {len(pdf_bytes) / 1024:.1f} KB")
+                except Exception as e:
+                    st.error(f"Error generating PDF: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
+                    st.info("Tip: Make sure all images loaded correctly and the report was generated.")
+
             # Save labeled images section
             st.markdown("---")
             st.subheader("💾 Save Labeled Images to Training Data")
-            st.markdown("*Once you're satisfied with the report, label and save the images for future model training.*")
+            st.markdown("*If you know the confirmed diagnosis, please verify the label below and save the scan to improve future model training.*")
 
             # Create columns for labeling each image
             for idx, (img, file_name, result) in enumerate(zip(images, file_names, results)):
@@ -722,7 +766,7 @@ Write the entire report in professional medical narrative style with complete se
 
                         true_label = st.selectbox(
                             "Select true category:",
-                            ["glioma", "meningioma", "notumor", "pituitary"],
+                            ["notumor", "meningioma", "pituitary", "glioma"],
                             key=f"label_select_{idx}"
                         )
 
@@ -779,28 +823,28 @@ with tab3:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.info("""
-        **No Tumor**
+        colored_box('notumor', """
+        <strong>No Tumor</strong><br>
         A normal brain scan without abnormal masses.
         """)
 
-        st.success("""
-        **Glioma**
-        Tumors originating from glial cells, often requiring early planning for
-        surgery, radiotherapy or chemotherapy.
+        colored_box('meningioma', """
+        <strong>Meningioma</strong><br>
+        Usually slow-growing tumors arising from the meninges, treated
+        through monitoring or surgery depending on growth and location.
         """)
 
     with col2:
-        st.warning("""
-        **Pituitary Tumor**
+        colored_box('pituitary', """
+        <strong>Pituitary Tumor</strong><br>
         Tumors near the pituitary gland that may affect hormone
         regulation and require a distinct clinical pathway.
         """)
 
-        st.error("""
-        **Meningioma**
-        Usually slow-growing tumors arising from the meninges, treated
-        through monitoring or surgery depending on growth and location.
+        colored_box('glioma', """
+        <strong>Glioma</strong><br>
+        Tumors originating from glial cells, often requiring early planning for
+        surgery, radiotherapy or chemotherapy.
         """)
 
     st.markdown("---")

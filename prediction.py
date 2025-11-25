@@ -6,7 +6,7 @@ from tensorflow import keras
 from pathlib import Path
 
 # Model path - use SavedModel format for TensorFlow 2.x compatibility
-MODEL_PATH = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_export"
+MODEL_PATH = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_improved"
 
 # Label mapping
 LABEL_MAP = {

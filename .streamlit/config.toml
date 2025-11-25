@@ -1,0 +1,11 @@
+[client]
+# Disable notification sounds
+showErrorDetails = true
+
+[browser]
+# Disable browser notifications and sounds
+gatherUsageStats = false
+
+[ui]
+# Disable success/error notification sounds
+hideTopBar = false
