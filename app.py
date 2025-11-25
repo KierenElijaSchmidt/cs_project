@@ -5,8 +5,8 @@ from pathlib import Path
 import random
 import os
 import time
-import io
 import re
+from datetime import datetime
 from dotenv import load_dotenv
 import plotly.express as px
 import plotly.graph_objects as go
@@ -101,6 +101,87 @@ def create_pie_chart(data: dict, title: str):
     fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
     return fig
 
+def generate_pdf_report(report_text: str, images: list, file_names: list, results: list) -> bytes:
+    """Generate a PDF report with images and classifications."""
+    try:
+        from fpdf import FPDF
+
+        # Remove emojis and special characters that cause encoding issues
+        def clean_text(text):
+            # Remove emojis and special unicode characters
+            text = re.sub(r'[^\x00-\x7F]+', '', text)  # Remove non-ASCII
+            # Remove markdown formatting
+            text = re.sub(r'#{1,6}\s', '', text)  # Remove headers
+            text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # Remove bold
+            text = re.sub(r'\*(.+?)\*', r'\1', text)  # Remove italics
+            text = re.sub(r'>\s', '', text)  # Remove blockquotes
+            text = re.sub(r'---', '', text)  # Remove horizontal lines
+            return text.strip()
+
+        class PDF(FPDF):
+            def header(self):
+                self.set_font('Arial', 'B', 18)
+                self.cell(0, 10, 'NeuroSight MRI Report', 0, 1, 'C')
+                self.set_font('Arial', 'I', 10)
+                # Get current date and time
+                current_datetime = datetime.now().strftime('%B %d, %Y at %I:%M %p')
+                self.cell(0, 5, f'Generated: {current_datetime}', 0, 1, 'C')
+                self.ln(5)
+
+            def footer(self):
+                self.set_y(-15)
+                self.set_font('Arial', 'I', 8)
+                self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+        pdf = PDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=11)
+
+        # Add cleaned report content
+        cleaned_report = clean_text(report_text)
+        pdf.multi_cell(0, 5, cleaned_report)
+
+        pdf.ln(10)
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(0, 10, 'Image Classifications', 0, 1)
+        pdf.set_font("Arial", size=10)
+
+        # Add images and their classifications
+        for idx, (img, file_name, result) in enumerate(zip(images, file_names, results)):
+            pdf.ln(5)
+            pdf.set_font("Arial", 'B', 11)
+            pdf.cell(0, 5, f"Scan {idx+1}: {file_name}", 0, 1)
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0, 5, f"Classification: {result['label'].title()} (Confidence: {result['confidence']:.1%})", 0, 1)
+
+            # Save image temporarily and add to PDF
+            temp_img_path = f"/tmp/temp_img_{idx}_{int(time.time())}.jpg"
+            img_pil = Image.fromarray(img)
+            if img_pil.mode == 'RGBA':
+                rgb_img = Image.new('RGB', img_pil.size, (255, 255, 255))
+                rgb_img.paste(img_pil, mask=img_pil.split()[3])
+                rgb_img.save(temp_img_path)
+            else:
+                img_pil.convert('RGB').save(temp_img_path)
+
+            # Add image to PDF (scaled to fit)
+            pdf.image(temp_img_path, x=10, w=100)
+
+            # Clean up temp file
+            try:
+                os.remove(temp_img_path)
+            except:
+                pass
+
+            pdf.ln(5)
+
+        # Return PDF as bytes
+        return pdf.output(dest='S')
+    except ImportError:
+        raise ImportError("PDF generation requires 'fpdf' library. Install with: pip install fpdf")
+    except Exception as e:
+        raise Exception(f"Error generating PDF: {str(e)}")
+
 def get_chat_response(api_key: str, results: list, true_labels: list = None):
     """Get treatment recommendations from Claude."""
     import anthropic
@@ -142,7 +223,7 @@ with st.sidebar:
     """)
 
 # Tabs for different input methods
-tab1, tab2 = st.tabs(["Upload Images", "Random Test Images"])
+tab1, tab2, tab3 = st.tabs(["Upload Images", "Test Model Performance", "About"])
 
 with tab1:
     # File uploader
@@ -506,79 +587,30 @@ Format the report beautifully while maintaining medical professionalism."""
             st.subheader("📋 Medical Report")
 
             if 'tab1_report' in st.session_state and st.session_state['tab1_report']:
-                # Add PDF download button
+                # Add PDF download button (single button that downloads directly)
                 col1, col2 = st.columns([4, 1])
                 with col2:
-                    if st.button("📄 Download PDF", key="download_pdf_btn", type="secondary"):
-                        # Generate PDF with report and images
-                        try:
-                            from fpdf import FPDF
+                    try:
+                        # Get the latest report from chat history (last assistant message)
+                        latest_report = st.session_state['tab1_report']
+                        if 'messages_tab1' in st.session_state and len(st.session_state['messages_tab1']) > 0:
+                            # Get the last assistant message which is the most recent report
+                            for msg in reversed(st.session_state['messages_tab1']):
+                                if msg['role'] == 'assistant':
+                                    latest_report = msg['content']
+                                    break
 
-                            class PDF(FPDF):
-                                def header(self):
-                                    self.set_font('Arial', 'B', 16)
-                                    self.cell(0, 10, 'Medical MRI Report', 0, 1, 'C')
-                                    self.ln(5)
-
-                                def footer(self):
-                                    self.set_y(-15)
-                                    self.set_font('Arial', 'I', 8)
-                                    self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
-
-                            pdf = FPDF()
-                            pdf.add_page()
-                            pdf.set_font("Arial", size=11)
-
-                            # Add report content (strip markdown for PDF)
-                            report_text = st.session_state['tab1_report']
-                            # Simple markdown to plain text conversion
-                            report_text = re.sub(r'#{1,6}\s', '', report_text)  # Remove headers
-                            report_text = re.sub(r'\*\*(.+?)\*\*', r'\1', report_text)  # Remove bold
-                            report_text = re.sub(r'\*(.+?)\*', r'\1', report_text)  # Remove italics
-                            report_text = re.sub(r'>\s', '', report_text)  # Remove blockquotes
-
-                            # Add text with line breaks
-                            pdf.multi_cell(0, 5, report_text.encode('latin-1', 'replace').decode('latin-1'))
-
-                            pdf.ln(10)
-                            pdf.set_font("Arial", 'B', 12)
-                            pdf.cell(0, 10, 'Image Classifications:', 0, 1)
-                            pdf.set_font("Arial", size=10)
-
-                            # Add images and their classifications
-                            for idx, (img, file_name, result) in enumerate(zip(images, file_names, results)):
-                                pdf.ln(5)
-                                pdf.cell(0, 5, f"Scan {idx+1}: {file_name}", 0, 1)
-                                pdf.cell(0, 5, f"Classification: {result['label'].title()} ({result['confidence']:.1%})", 0, 1)
-
-                                # Save image temporarily and add to PDF
-                                temp_img_path = f"/tmp/temp_img_{idx}.jpg"
-                                img_pil = Image.fromarray(img)
-                                if img_pil.mode == 'RGBA':
-                                    rgb_img = Image.new('RGB', img_pil.size, (255, 255, 255))
-                                    rgb_img.paste(img_pil, mask=img_pil.split()[3])
-                                    rgb_img.save(temp_img_path)
-                                else:
-                                    img_pil.convert('RGB').save(temp_img_path)
-
-                                # Add image to PDF (scaled to fit)
-                                pdf.image(temp_img_path, x=10, w=100)
-                                pdf.ln(5)
-
-                            # Save PDF to bytes
-                            pdf_output = pdf.output(dest='S').encode('latin-1')
-
-                            st.download_button(
-                                label="💾 Click to Download PDF",
-                                data=pdf_output,
-                                file_name=f"medical_report_{int(time.time())}.pdf",
-                                mime="application/pdf",
-                                key="final_pdf_download"
-                            )
-                        except ImportError:
-                            st.error("PDF generation requires 'fpdf' library. Install with: pip install fpdf")
-                        except Exception as e:
-                            st.error(f"Error generating PDF: {str(e)}")
+                        pdf_bytes = generate_pdf_report(latest_report, images, file_names, results)
+                        st.download_button(
+                            label="📄 Download PDF",
+                            data=pdf_bytes,
+                            file_name=f"neurosight_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                            mime="application/pdf",
+                            key="download_pdf_tab1",
+                            type="secondary"
+                        )
+                    except Exception as e:
+                        st.error(f"Error generating PDF: {str(e)}")
             else:
                 st.info("Report will be generated automatically after classification.")
 
@@ -661,10 +693,10 @@ Format the report beautifully while maintaining medical professionalism."""
             else:
                 st.warning("API key not configured. Set ANTHROPIC_API_KEY in .env file.")
 
-            # Download labeled images section
+            # Save labeled images section
             st.markdown("---")
-            st.subheader("📥 Download Labeled Images")
-            st.markdown("*Once you're satisfied with the report, label and download the images for training data.*")
+            st.subheader("💾 Save Labeled Images to Training Data")
+            st.markdown("*Once you're satisfied with the report, label and save the images for future model training.*")
 
             # Create columns for labeling each image
             for idx, (img, file_name, result) in enumerate(zip(images, file_names, results)):
@@ -683,32 +715,114 @@ Format the report beautifully while maintaining medical professionalism."""
                             key=f"label_select_{idx}"
                         )
 
-                        # Convert image for download
-                        img_pil = Image.fromarray(img)
-                        if img_pil.mode == 'RGBA':
-                            rgb_img = Image.new('RGB', img_pil.size, (255, 255, 255))
-                            rgb_img.paste(img_pil, mask=img_pil.split()[3])
-                            img_pil = rgb_img
-                        else:
-                            img_pil = img_pil.convert('RGB')
+                        # Save button that saves to backend
+                        if st.button(f"💾 Save to Training Data", key=f"save_file_{idx}", type="primary"):
+                            # Create directory for labeled data
+                            save_dir = Path(__file__).parent / "data" / "labeled_training" / true_label
+                            save_dir.mkdir(parents=True, exist_ok=True)
 
-                        # Save to bytes
-                        buf = io.BytesIO()
-                        img_pil.save(buf, format='JPEG')
-                        buf.seek(0)
+                            # Generate filename with timestamp
+                            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                            original_name = Path(file_name).stem
+                            save_path = save_dir / f"{original_name}_{timestamp}.jpg"
 
-                        # Direct download button (no nested button)
-                        st.download_button(
-                            label=f"📥 Download as {true_label}.jpg",
-                            data=buf.getvalue(),
-                            file_name=f"{true_label}.jpg",
-                            mime="image/jpeg",
-                            key=f"download_file_{idx}",
-                            type="primary"
-                        )
+                            # Convert and save image
+                            img_pil = Image.fromarray(img)
+                            if img_pil.mode == 'RGBA':
+                                rgb_img = Image.new('RGB', img_pil.size, (255, 255, 255))
+                                rgb_img.paste(img_pil, mask=img_pil.split()[3])
+                                rgb_img.save(save_path)
+                            else:
+                                img_pil.convert('RGB').save(save_path)
+
+                            st.success(f"✓ Saved to backend: {save_path.relative_to(Path(__file__).parent)}")
 
     else:
         st.info("Please upload one or more MRI brain scan images to get started.")
+
+with tab3:
+    st.header("About NeuroSight")
+
+    st.markdown("---")
+
+    st.subheader("Vision")
+    st.markdown("""
+    Brain tumors are increasingly common and remain a major cause of mortality. Their
+    interpretation requires time, experience and consistency. **NeuroSight** supports radiologists
+    with fast and accurate image classification and an integrated interface for clinical reasoning
+    and treatment planning. The goal is not to replace expert judgment but to strengthen it.
+    """)
+
+    st.markdown("---")
+
+    st.subheader("Problem Statement")
+    st.markdown("""
+    MRI interpretation is demanding and workloads continue to rise. Subtle tumor patterns are
+    easy to overlook, and manual review slows down treatment decisions. NeuroSight
+    addresses this by classifying scans into four categories and providing structured support for
+    the next diagnostic or therapeutic steps.
+    """)
+
+    st.markdown("**The four categories are:**")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.info("""
+        **No Tumor**
+        A normal brain scan without abnormal masses.
+        """)
+
+        st.success("""
+        **Glioma**
+        Tumors originating from glial cells, often requiring early planning for
+        surgery, radiotherapy or chemotherapy.
+        """)
+
+    with col2:
+        st.warning("""
+        **Pituitary Tumor**
+        Tumors near the pituitary gland that may affect hormone
+        regulation and require a distinct clinical pathway.
+        """)
+
+        st.error("""
+        **Meningioma**
+        Usually slow-growing tumors arising from the meninges, treated
+        through monitoring or surgery depending on growth and location.
+        """)
+
+    st.markdown("---")
+
+    st.subheader("How NeuroSight Works")
+
+    st.markdown("### 1. Upload & Diagnose")
+    st.markdown("""
+    In the first tab, users upload an MRI scan.
+
+    The system classifies the image and shows a confidence breakdown as a stacked bar chart.
+
+    Below the result, a medical assistant interface helps refine reasoning and explore next steps
+    based on the model output.
+    """)
+
+    st.markdown("### 2. Test Model Performance")
+    st.markdown("""
+    In the second tab, users select how many random dataset images to test.
+
+    The system classifies them, compares predictions with actuals and displays:
+    - A pie chart of predicted vs. actual classifications
+    - Accuracy scores for the selected sample
+    """)
+
+    st.markdown("### 3. Vision & Explanation (This Tab)")
+    st.markdown("""
+    This tab presents the project motivation, medical context and a clear overview of how
+    NeuroSight supports radiological workflows.
+
+    It explains why fast and consistent classification matters and outlines how each feature
+    contributes to safer and more efficient decision-making.
+    """)
 
 # Footer
 st.markdown("---")
