@@ -4,6 +4,7 @@ from PIL import Image
 from pathlib import Path
 import random
 import os
+import time
 from dotenv import load_dotenv
 import plotly.express as px
 import plotly.graph_objects as go
@@ -146,7 +147,8 @@ with tab1:
     uploaded_files = st.file_uploader(
         "Upload MRI images (1-10 images)",
         type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True
+        accept_multiple_files=True,
+        key="file_uploader_tab1"
     )
 
 with tab2:
@@ -308,16 +310,23 @@ with tab2:
                         context += "Be clear this is AI-assisted analysis and final diagnosis requires specialist review. "
                         context += "Do NOT mention that you have access to 'true labels' or 'ground truth' - respond as if these predictions are the only information available."
 
-                        # Build messages
-                        messages = [{"role": "user", "content": context + "\n\nUser question: " + prompt}]
+                        # Build message content
+                        user_message = context + "\n\nUser question: " + prompt
 
                         response = client.messages.create(
                             model="claude-sonnet-4-20250514",
                             max_tokens=1024,
-                            messages=messages
+                            messages=[
+                                {"role": "user", "content": user_message}
+                            ]
                         )
 
-                        assistant_message = response.content[0].text
+                        # Get the text content from the response
+                        assistant_message = ""
+                        for block in response.content:
+                            if hasattr(block, 'text'):
+                                assistant_message += block.text
+
                         st.markdown(assistant_message)
                         st.session_state.messages.append({"role": "assistant", "content": assistant_message})
         else:
@@ -333,14 +342,16 @@ with tab1:
         st.markdown(f"**{len(uploaded_files)} image(s) uploaded**")
 
         # Process button
-        if st.button("Classify Images", type="primary"):
+        if st.button("Classify Images", type="primary", key="classify_btn_tab1"):
             with st.spinner("Processing images..."):
                 # Load images
                 images = []
+                file_names = []
                 for file in uploaded_files:
                     img = Image.open(file)
                     img_array = np.array(img)
                     images.append(img_array)
+                    file_names.append(file.name)
 
                 # Get predictions
                 if len(images) == 1:
@@ -348,7 +359,17 @@ with tab1:
                 else:
                     results = predict_batch(images)
 
-            # Display results
+                # Store in session state
+                st.session_state['tab1_results'] = results
+                st.session_state['tab1_images'] = images
+                st.session_state['tab1_file_names'] = file_names
+
+        # Display results from session state
+        if 'tab1_results' in st.session_state and st.session_state['tab1_results']:
+            results = st.session_state['tab1_results']
+            images = st.session_state['tab1_images']
+            file_names = st.session_state['tab1_file_names']
+
             st.markdown("---")
             st.subheader("Results")
 
@@ -364,21 +385,55 @@ with tab1:
 
                     with col:
                         # Display image
-                        st.image(images[idx], caption=uploaded_files[idx].name, use_container_width=True)
+                        st.image(images[idx], caption=file_names[idx], use_container_width=True)
 
                         # Display prediction
                         result = results[idx]
                         label = result["label"]
                         confidence = result["confidence"]
 
-                        # Color code based on tumor presence
-                        if label == "notumor":
-                            st.success(f"**{label}** ({confidence:.1%})")
-                        else:
-                            st.error(f"**{label}** ({confidence:.1%})")
+                        # Neutral design with gradient background
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            padding: 15px;
+                            border-radius: 10px;
+                            text-align: center;
+                            color: white;
+                            margin: 10px 0;
+                        ">
+                            <h3 style="margin: 0; font-size: 1.2em;">{label.upper()}</h3>
+                            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Confidence: {confidence:.1%}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
 
                         # Probability bar chart
                         st.plotly_chart(create_stacked_bar(result["probabilities"]), use_container_width=True)
+
+                        # Manual labeling section
+                        st.markdown("---")
+                        st.markdown("**📝 Label this image for training**")
+                        true_label = st.selectbox(
+                            "Select true category:",
+                            ["glioma", "meningioma", "notumor", "pituitary"],
+                            key=f"label_select_{idx}"
+                        )
+
+                        if st.button("Save for Training", key=f"save_btn_{idx}"):
+                            # Create directory for labeled data
+                            save_dir = Path(__file__).parent / "data" / "user_labeled" / true_label
+                            save_dir.mkdir(parents=True, exist_ok=True)
+
+                            # Generate unique filename
+                            timestamp = int(time.time() * 1000)
+                            original_name = Path(file_names[idx]).stem
+                            save_path = save_dir / f"{original_name}_{timestamp}.jpg"
+
+                            # Save image
+                            img_pil = Image.fromarray(images[idx])
+                            img_pil.save(save_path)
+
+                            st.success(f"✓ Saved to {save_path.relative_to(Path(__file__).parent)}")
 
             # Summary statistics
             if len(results) > 1:
@@ -392,6 +447,74 @@ with tab1:
 
                 fig = create_pie_chart(pred_counts, "Prediction Distribution")
                 st.plotly_chart(fig, use_container_width=True)
+
+            # Chat interface for uploaded images
+            st.markdown("---")
+            st.subheader("💬 Patient Consultation Assistant")
+
+            if ANTHROPIC_API_KEY:
+                # Initialize chat history for tab1
+                if "messages_tab1" not in st.session_state:
+                    st.session_state.messages_tab1 = []
+
+                # Display chat history
+                for message in st.session_state.messages_tab1:
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
+
+                # Chat input
+                if prompt := st.chat_input("Ask about treatment options or patient care...", key="chat_tab1"):
+                    # Add user message
+                    st.session_state.messages_tab1.append({"role": "user", "content": prompt})
+                    with st.chat_message("user"):
+                        st.markdown(prompt)
+
+                    # Get AI response
+                    with st.chat_message("assistant"):
+                        with st.spinner("Thinking..."):
+                            import anthropic
+
+                            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+                            # Build context from results - only predictions, no ground truth
+                            context = "You are a medical AI assistant helping a nurse with brain tumor diagnosis decisions. "
+                            context += "You are assisting with patient care based on MRI classification results. "
+                            context += "Based on the AI model's MRI analysis:\n\n"
+                            for i, result in enumerate(results):
+                                context += f"Scan {i+1}: {result['label'].upper()} (confidence: {result['confidence']:.1%})\n"
+                                # Show secondary predictions if confidence is below 80%
+                                if result['confidence'] < 0.8:
+                                    sorted_probs = sorted(result['probabilities'].items(), key=lambda x: -x[1])
+                                    context += f"  Alternative possibilities: {sorted_probs[1][0]} ({sorted_probs[1][1]:.1%})"
+                                    if len(sorted_probs) > 2 and sorted_probs[1][1] > 0.1:
+                                        context += f", {sorted_probs[2][0]} ({sorted_probs[2][1]:.1%})"
+                                    context += "\n"
+
+                            context += "\nProvide helpful guidance on next steps, referrals, and patient care. "
+                            context += "Be clear this is AI-assisted analysis and final diagnosis requires specialist review. "
+                            context += "Do NOT mention that you have access to 'true labels' or 'ground truth' - respond as if these predictions are the only information available."
+
+                            # Build message content
+                            user_message = context + "\n\nUser question: " + prompt
+
+                            response = client.messages.create(
+                                model="claude-sonnet-4-20250514",
+                                max_tokens=1024,
+                                messages=[
+                                    {"role": "user", "content": user_message}
+                                ]
+                            )
+
+                            # Get the text content from the response
+                            assistant_message = ""
+                            for block in response.content:
+                                if hasattr(block, 'text'):
+                                    assistant_message += block.text
+
+                            st.markdown(assistant_message)
+                            st.session_state.messages_tab1.append({"role": "assistant", "content": assistant_message})
+            else:
+                st.warning("API key not configured. Set ANTHROPIC_API_KEY in .env file.")
 
     else:
         st.info("Please upload one or more MRI brain scan images to get started.")
