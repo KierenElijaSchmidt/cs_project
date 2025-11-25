@@ -6,6 +6,7 @@ import random
 import os
 import time
 import io
+import re
 from dotenv import load_dotenv
 import plotly.express as px
 import plotly.graph_objects as go
@@ -364,56 +365,7 @@ with tab1:
                 st.session_state['tab1_results'] = results
                 st.session_state['tab1_images'] = images
                 st.session_state['tab1_file_names'] = file_names
-
-                # Auto-generate report
-                if ANTHROPIC_API_KEY:
-                    with st.spinner("Generating medical report..."):
-                        import anthropic
-                        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-                        # Build context for report generation
-                        context = "You are a medical AI assistant. Generate a comprehensive medical report based on the following MRI brain scan analysis:\n\n"
-                        for i, result in enumerate(results):
-                            context += f"Scan {i+1} ({file_names[i]}):\n"
-                            context += f"  - Primary diagnosis: {result['label'].upper()}\n"
-                            context += f"  - Confidence: {result['confidence']:.1%}\n"
-                            if result['confidence'] < 0.8:
-                                sorted_probs = sorted(result['probabilities'].items(), key=lambda x: -x[1])
-                                context += f"  - Alternative possibilities: {sorted_probs[1][0]} ({sorted_probs[1][1]:.1%})"
-                                if len(sorted_probs) > 2 and sorted_probs[1][1] > 0.1:
-                                    context += f", {sorted_probs[2][0]} ({sorted_probs[2][1]:.1%})"
-                                context += "\n"
-                            context += "\n"
-
-                        context += "\nGenerate a professional medical report with the following sections:\n"
-                        context += "1. PATIENT SCAN SUMMARY - Brief overview of all scans analyzed\n"
-                        context += "2. FINDINGS - Detailed findings for each scan\n"
-                        context += "3. CLINICAL SIGNIFICANCE - What these findings mean\n"
-                        context += "4. RECOMMENDATIONS - Next steps, referrals, and follow-up care\n"
-                        context += "5. DISCLAIMER - Note that this is AI-assisted analysis requiring specialist review\n\n"
-                        context += "Format the report professionally with clear headers and concise information."
-
-                        response = client.messages.create(
-                            model="claude-sonnet-4-20250514",
-                            max_tokens=2048,
-                            messages=[
-                                {"role": "user", "content": context}
-                            ]
-                        )
-
-                        # Extract report text
-                        report_text = ""
-                        for block in response.content:
-                            if hasattr(block, 'text'):
-                                report_text += block.text
-
-                        # Store report in session state
-                        st.session_state['tab1_report'] = report_text
-
-                        # Initialize chat history with the report
-                        st.session_state['messages_tab1'] = [
-                            {"role": "assistant", "content": report_text}
-                        ]
+                st.session_state['tab1_report_generated'] = False  # Flag to trigger report generation
 
         # Display results from session state
         if 'tab1_results' in st.session_state and st.session_state['tab1_results']:
@@ -474,11 +426,160 @@ with tab1:
                 fig = create_pie_chart(pred_counts, "Prediction Distribution")
                 st.plotly_chart(fig, use_container_width=True)
 
+            # Auto-generate report after displaying predictions (if not already generated)
+            if ANTHROPIC_API_KEY and 'tab1_report_generated' in st.session_state and not st.session_state['tab1_report_generated']:
+                with st.spinner("Generating medical report..."):
+                    import anthropic
+                    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+                    # Build context for report generation with improved formatting
+                    context = """You are a medical AI assistant. Generate a comprehensive, well-formatted medical report based on the following MRI brain scan analysis.
+
+IMPORTANT FORMATTING GUIDELINES:
+- Use proper title case for section headers (not ALL CAPS)
+- Use markdown formatting with ### for main sections, #### for subsections
+- Add horizontal lines (---) between major sections for visual separation
+- Use bullet points (•) for lists and findings
+- Add subtle box elements using > blockquotes for important notes
+- Include relevant medical icons/symbols where appropriate
+- Keep formatting clean, professional, and easy to read
+- Prioritize medical functionality while maintaining aesthetic appeal
+
+"""
+                    context += "**MRI Analysis Results:**\n\n"
+                    for i, result in enumerate(results):
+                        context += f"**Scan {i+1}** ({file_names[i]}):\n"
+                        context += f"  • Primary diagnosis: **{result['label'].title()}**\n"
+                        context += f"  • Confidence level: {result['confidence']:.1%}\n"
+                        if result['confidence'] < 0.8:
+                            sorted_probs = sorted(result['probabilities'].items(), key=lambda x: -x[1])
+                            context += f"  • Alternative possibilities: {sorted_probs[1][0].title()} ({sorted_probs[1][1]:.1%})"
+                            if len(sorted_probs) > 2 and sorted_probs[1][1] > 0.1:
+                                context += f", {sorted_probs[2][0].title()} ({sorted_probs[2][1]:.1%})"
+                            context += "\n"
+                        context += "\n"
+
+                    context += """\nGenerate a professional medical report with these sections:
+
+### Patient Scan Summary
+Brief overview of all scans analyzed
+
+### Findings
+Detailed findings for each scan with clinical observations
+
+### Clinical Significance
+What these findings mean for patient care and prognosis
+
+### Recommendations
+Next steps, specialist referrals, and follow-up care needed
+
+### Medical Disclaimer
+> Note that this is AI-assisted analysis requiring specialist review
+
+Format the report beautifully while maintaining medical professionalism."""
+
+                    response = client.messages.create(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=2048,
+                        messages=[
+                            {"role": "user", "content": context}
+                        ]
+                    )
+
+                    # Extract report text
+                    report_text = ""
+                    for block in response.content:
+                        if hasattr(block, 'text'):
+                            report_text += block.text
+
+                    # Store report in session state
+                    st.session_state['tab1_report'] = report_text
+                    st.session_state['tab1_report_generated'] = True
+
+                    # Initialize chat history with the report
+                    st.session_state['messages_tab1'] = [
+                        {"role": "assistant", "content": report_text}
+                    ]
+
             # Medical Report Section
             st.markdown("---")
             st.subheader("📋 Medical Report")
 
-            if 'tab1_report' not in st.session_state:
+            if 'tab1_report' in st.session_state and st.session_state['tab1_report']:
+                # Add PDF download button
+                col1, col2 = st.columns([4, 1])
+                with col2:
+                    if st.button("📄 Download PDF", key="download_pdf_btn", type="secondary"):
+                        # Generate PDF with report and images
+                        try:
+                            from fpdf import FPDF
+
+                            class PDF(FPDF):
+                                def header(self):
+                                    self.set_font('Arial', 'B', 16)
+                                    self.cell(0, 10, 'Medical MRI Report', 0, 1, 'C')
+                                    self.ln(5)
+
+                                def footer(self):
+                                    self.set_y(-15)
+                                    self.set_font('Arial', 'I', 8)
+                                    self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+                            pdf = FPDF()
+                            pdf.add_page()
+                            pdf.set_font("Arial", size=11)
+
+                            # Add report content (strip markdown for PDF)
+                            report_text = st.session_state['tab1_report']
+                            # Simple markdown to plain text conversion
+                            report_text = re.sub(r'#{1,6}\s', '', report_text)  # Remove headers
+                            report_text = re.sub(r'\*\*(.+?)\*\*', r'\1', report_text)  # Remove bold
+                            report_text = re.sub(r'\*(.+?)\*', r'\1', report_text)  # Remove italics
+                            report_text = re.sub(r'>\s', '', report_text)  # Remove blockquotes
+
+                            # Add text with line breaks
+                            pdf.multi_cell(0, 5, report_text.encode('latin-1', 'replace').decode('latin-1'))
+
+                            pdf.ln(10)
+                            pdf.set_font("Arial", 'B', 12)
+                            pdf.cell(0, 10, 'Image Classifications:', 0, 1)
+                            pdf.set_font("Arial", size=10)
+
+                            # Add images and their classifications
+                            for idx, (img, file_name, result) in enumerate(zip(images, file_names, results)):
+                                pdf.ln(5)
+                                pdf.cell(0, 5, f"Scan {idx+1}: {file_name}", 0, 1)
+                                pdf.cell(0, 5, f"Classification: {result['label'].title()} ({result['confidence']:.1%})", 0, 1)
+
+                                # Save image temporarily and add to PDF
+                                temp_img_path = f"/tmp/temp_img_{idx}.jpg"
+                                img_pil = Image.fromarray(img)
+                                if img_pil.mode == 'RGBA':
+                                    rgb_img = Image.new('RGB', img_pil.size, (255, 255, 255))
+                                    rgb_img.paste(img_pil, mask=img_pil.split()[3])
+                                    rgb_img.save(temp_img_path)
+                                else:
+                                    img_pil.convert('RGB').save(temp_img_path)
+
+                                # Add image to PDF (scaled to fit)
+                                pdf.image(temp_img_path, x=10, w=100)
+                                pdf.ln(5)
+
+                            # Save PDF to bytes
+                            pdf_output = pdf.output(dest='S').encode('latin-1')
+
+                            st.download_button(
+                                label="💾 Click to Download PDF",
+                                data=pdf_output,
+                                file_name=f"medical_report_{int(time.time())}.pdf",
+                                mime="application/pdf",
+                                key="final_pdf_download"
+                            )
+                        except ImportError:
+                            st.error("PDF generation requires 'fpdf' library. Install with: pip install fpdf")
+                        except Exception as e:
+                            st.error(f"Error generating PDF: {str(e)}")
+            else:
                 st.info("Report will be generated automatically after classification.")
 
             # Chat interface for report editing
@@ -567,7 +668,7 @@ with tab1:
 
             # Create columns for labeling each image
             for idx, (img, file_name, result) in enumerate(zip(images, file_names, results)):
-                with st.expander(f"Label Image {idx+1}: {file_name}"):
+                with st.expander(f"Label Image {idx+1}: {file_name}", expanded=True):
                     col1, col2 = st.columns([1, 2])
 
                     with col1:
@@ -582,30 +683,29 @@ with tab1:
                             key=f"label_select_{idx}"
                         )
 
-                        if st.button("Download with Label", key=f"download_btn_{idx}", type="primary"):
-                            # Convert image for download
-                            img_pil = Image.fromarray(img)
-                            if img_pil.mode == 'RGBA':
-                                rgb_img = Image.new('RGB', img_pil.size, (255, 255, 255))
-                                rgb_img.paste(img_pil, mask=img_pil.split()[3])
-                                img_pil = rgb_img
-                            else:
-                                img_pil = img_pil.convert('RGB')
+                        # Convert image for download
+                        img_pil = Image.fromarray(img)
+                        if img_pil.mode == 'RGBA':
+                            rgb_img = Image.new('RGB', img_pil.size, (255, 255, 255))
+                            rgb_img.paste(img_pil, mask=img_pil.split()[3])
+                            img_pil = rgb_img
+                        else:
+                            img_pil = img_pil.convert('RGB')
 
-                            # Save to bytes
-                            buf = io.BytesIO()
-                            img_pil.save(buf, format='JPEG')
-                            buf.seek(0)
+                        # Save to bytes
+                        buf = io.BytesIO()
+                        img_pil.save(buf, format='JPEG')
+                        buf.seek(0)
 
-                            # Download button
-                            st.download_button(
-                                label=f"💾 Download as {true_label}.jpg",
-                                data=buf,
-                                file_name=f"{true_label}_{int(time.time() * 1000)}.jpg",
-                                mime="image/jpeg",
-                                key=f"download_file_{idx}"
-                            )
-                            st.success(f"✓ Ready to download as {true_label}.jpg")
+                        # Direct download button (no nested button)
+                        st.download_button(
+                            label=f"📥 Download as {true_label}.jpg",
+                            data=buf.getvalue(),
+                            file_name=f"{true_label}.jpg",
+                            mime="image/jpeg",
+                            key=f"download_file_{idx}",
+                            type="primary"
+                        )
 
     else:
         st.info("Please upload one or more MRI brain scan images to get started.")
