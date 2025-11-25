@@ -176,7 +176,8 @@ def generate_pdf_report(report_text: str, images: list, file_names: list, result
             pdf.ln(5)
 
         # Return PDF as bytes
-        return pdf.output(dest='S')
+        pdf_bytes = pdf.output()
+        return pdf_bytes if isinstance(pdf_bytes, bytes) else pdf_bytes.encode('latin-1')
     except ImportError:
         raise ImportError("PDF generation requires 'fpdf' library. Install with: pip install fpdf")
     except Exception as e:
@@ -238,7 +239,7 @@ with tab2:
     st.markdown("**Select random images from the test dataset**")
 
     # Slider for number of images
-    num_images = st.slider("Number of random images", min_value=1, max_value=10, value=3)
+    num_images = st.slider("Number of random images to test", min_value=1, max_value=100, value=10)
 
     # Button to load random images
     if st.button("Load Random Test Images", type="primary"):
@@ -348,7 +349,7 @@ with tab2:
 
         # Chat interface
         st.markdown("---")
-        st.subheader("💬 Patient Consultation Assistant")
+        st.subheader("📊 Model Performance Analysis Assistant")
 
         if ANTHROPIC_API_KEY:
             # Initialize chat history
@@ -361,7 +362,7 @@ with tab2:
                     st.markdown(message["content"])
 
             # Chat input
-            if prompt := st.chat_input("Ask about treatment options or patient care..."):
+            if prompt := st.chat_input("Ask about model performance, accuracy patterns, or misclassifications..."):
                 # Add user message
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 with st.chat_message("user"):
@@ -369,29 +370,41 @@ with tab2:
 
                 # Get AI response
                 with st.chat_message("assistant"):
-                    with st.spinner("Thinking..."):
+                    with st.spinner("Analyzing model performance..."):
                         import anthropic
 
                         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-                        # Build context from results - NOTE: Only predictions, no ground truth
-                        # This simulates real-world use where the nurse only has AI predictions
-                        context = "You are a medical AI assistant helping a nurse with brain tumor diagnosis decisions. "
-                        context += "You are assisting with patient care based on MRI classification results. "
-                        context += "Based on the AI model's MRI analysis:\n\n"
-                        for i, result in enumerate(results):
-                            context += f"Scan {i+1}: {result['label'].upper()} (confidence: {result['confidence']:.1%})\n"
-                            # Show secondary predictions if confidence is below 80%
-                            if result['confidence'] < 0.8:
-                                sorted_probs = sorted(result['probabilities'].items(), key=lambda x: -x[1])
-                                context += f"  Alternative possibilities: {sorted_probs[1][0]} ({sorted_probs[1][1]:.1%})"
-                                if sorted_probs[1][1] > 0.1:
-                                    context += f", {sorted_probs[2][0]} ({sorted_probs[2][1]:.1%})"
-                                context += "\n"
+                        # Build context for model performance analysis - includes BOTH predictions and ground truth
+                        context = "You are an AI model performance analyst. Analyze the classification results and help identify patterns, strengths, and weaknesses. "
+                        context += "You have access to both predicted labels and true labels for model evaluation.\n\n"
+                        context += "**Test Results:**\n\n"
 
-                        context += "\nProvide helpful guidance on next steps, referrals, and patient care. "
-                        context += "Be clear this is AI-assisted analysis and final diagnosis requires specialist review. "
-                        context += "Do NOT mention that you have access to 'true labels' or 'ground truth' - respond as if these predictions are the only information available."
+                        # Include both predictions and ground truth
+                        correct_count = 0
+                        for i, (result, true_label) in enumerate(zip(results, true_labels)):
+                            pred_label = result['label']
+                            is_correct = pred_label == true_label
+                            if is_correct:
+                                correct_count += 1
+
+                            context += f"Scan {i+1}:\n"
+                            context += f"  - True Label: {true_label.upper()}\n"
+                            context += f"  - Predicted: {pred_label.upper()} (confidence: {result['confidence']:.1%})\n"
+                            context += f"  - Result: {'CORRECT' if is_correct else 'INCORRECT'}\n"
+
+                            # Show all probabilities for misclassifications
+                            if not is_correct:
+                                context += "  - All probabilities: "
+                                sorted_probs = sorted(result['probabilities'].items(), key=lambda x: -x[1])
+                                context += ", ".join([f"{label}: {prob:.1%}" for label, prob in sorted_probs])
+                                context += "\n"
+                            context += "\n"
+
+                        context += f"\n**Overall Accuracy: {correct_count}/{len(results)} ({correct_count/len(results):.1%})**\n\n"
+                        context += "Analyze the model's performance, identify patterns in correct/incorrect predictions, "
+                        context += "discuss potential issues with specific tumor types, and suggest areas for improvement. "
+                        context += "You can reference specific scans by number when discussing examples."
 
                         # Build message content
                         user_message = context + "\n\nUser question: " + prompt
@@ -471,25 +484,20 @@ with tab1:
                         # Display image
                         st.image(images[idx], caption=file_names[idx], use_container_width=True)
 
-                        # Display prediction
+                        # Display prediction with color coding matching Tab 3
                         result = results[idx]
                         label = result["label"]
                         confidence = result["confidence"]
 
-                        # Neutral design with gradient background
-                        st.markdown(f"""
-                        <div style="
-                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                            padding: 15px;
-                            border-radius: 10px;
-                            text-align: center;
-                            color: white;
-                            margin: 10px 0;
-                        ">
-                            <h3 style="margin: 0; font-size: 1.2em;">{label.upper()}</h3>
-                            <p style="margin: 5px 0 0 0; font-size: 0.9em;">Confidence: {confidence:.1%}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        # Color code based on tumor type (matching Tab 3)
+                        if label == "notumor":
+                            st.info(f"**{label.upper()}**\n\nConfidence: {confidence:.1%}")
+                        elif label == "glioma":
+                            st.success(f"**{label.upper()}**\n\nConfidence: {confidence:.1%}")
+                        elif label == "pituitary":
+                            st.warning(f"**{label.upper()}**\n\nConfidence: {confidence:.1%}")
+                        elif label == "meningioma":
+                            st.error(f"**{label.upper()}**\n\nConfidence: {confidence:.1%}")
 
                         # Probability bar chart
                         st.plotly_chart(create_stacked_bar(result["probabilities"]), use_container_width=True)
@@ -516,48 +524,48 @@ with tab1:
                     # Build context for report generation with improved formatting
                     context = """You are a medical AI assistant. Generate a comprehensive, well-formatted medical report based on the following MRI brain scan analysis.
 
-IMPORTANT FORMATTING GUIDELINES:
+CRITICAL FORMATTING GUIDELINES:
 - Use proper title case for section headers (not ALL CAPS)
-- Use markdown formatting with ### for main sections, #### for subsections
+- Use markdown formatting with ### for main sections
 - Add horizontal lines (---) between major sections for visual separation
-- Use bullet points (•) for lists and findings
-- Add subtle box elements using > blockquotes for important notes
-- Include relevant medical icons/symbols where appropriate
+- Write in COMPLETE SENTENCES and PARAGRAPHS - NO bullet points or lists
+- Use professional medical narrative style throughout
+- Add > blockquotes for important clinical notes
 - Keep formatting clean, professional, and easy to read
 - Prioritize medical functionality while maintaining aesthetic appeal
+- Every section should be written in flowing prose, not itemized lists
 
 """
                     context += "**MRI Analysis Results:**\n\n"
                     for i, result in enumerate(results):
-                        context += f"**Scan {i+1}** ({file_names[i]}):\n"
-                        context += f"  • Primary diagnosis: **{result['label'].title()}**\n"
-                        context += f"  • Confidence level: {result['confidence']:.1%}\n"
+                        context += f"Scan {i+1} ({file_names[i]}): "
+                        context += f"Primary diagnosis is {result['label'].title()} with {result['confidence']:.1%} confidence. "
                         if result['confidence'] < 0.8:
                             sorted_probs = sorted(result['probabilities'].items(), key=lambda x: -x[1])
-                            context += f"  • Alternative possibilities: {sorted_probs[1][0].title()} ({sorted_probs[1][1]:.1%})"
+                            context += f"Alternative possibilities include {sorted_probs[1][0].title()} ({sorted_probs[1][1]:.1%})"
                             if len(sorted_probs) > 2 and sorted_probs[1][1] > 0.1:
-                                context += f", {sorted_probs[2][0].title()} ({sorted_probs[2][1]:.1%})"
-                            context += "\n"
-                        context += "\n"
+                                context += f" and {sorted_probs[2][0].title()} ({sorted_probs[2][1]:.1%})"
+                            context += ". "
+                        context += "\n\n"
 
-                    context += """\nGenerate a professional medical report with these sections:
+                    context += """Generate a professional medical report with these sections. Use complete sentences and narrative paragraphs throughout:
 
 ### Patient Scan Summary
-Brief overview of all scans analyzed
+Write a brief narrative overview of all scans analyzed. Describe what was examined and the overall assessment in complete sentences.
 
 ### Findings
-Detailed findings for each scan with clinical observations
+Provide detailed findings for each scan with clinical observations. Write in paragraph form describing what the imaging reveals. Use complete sentences to explain the observations.
 
 ### Clinical Significance
-What these findings mean for patient care and prognosis
+Explain in narrative form what these findings mean for patient care and prognosis. Discuss the implications using complete sentences and proper paragraph structure.
 
 ### Recommendations
-Next steps, specialist referrals, and follow-up care needed
+Describe the recommended next steps, specialist referrals, and follow-up care needed. Write this as a coherent narrative with complete sentences explaining each recommendation and its rationale.
 
 ### Medical Disclaimer
-> Note that this is AI-assisted analysis requiring specialist review
+> This analysis has been generated with AI assistance and requires review and validation by a qualified medical specialist before any clinical decisions are made.
 
-Format the report beautifully while maintaining medical professionalism."""
+Write the entire report in professional medical narrative style with complete sentences. No bullet points or lists."""
 
                     response = client.messages.create(
                         model="claude-sonnet-4-20250514",
@@ -690,6 +698,9 @@ Format the report beautifully while maintaining medical professionalism."""
 
                             # Update the stored report with the latest version
                             st.session_state['tab1_report'] = assistant_message
+
+                            # Force a rerun to update the PDF download button
+                            st.rerun()
             else:
                 st.warning("API key not configured. Set ANTHROPIC_API_KEY in .env file.")
 
