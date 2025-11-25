@@ -116,6 +116,74 @@ def create_pie_chart(data: dict, title: str):
     fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
     return fig
 
+def load_training_history():
+    """Load training history from JSON file."""
+    import json
+    history_path = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_improved" / "training_history.json"
+    if history_path.exists():
+        with open(history_path, 'r') as f:
+            return json.load(f)
+    return None
+
+def create_learning_curves(history: dict):
+    """Create learning curve plots for accuracy and loss."""
+    if not history:
+        return None, None
+
+    epochs = list(range(1, len(history['accuracy']) + 1))
+
+    # Accuracy plot
+    fig_acc = go.Figure()
+    fig_acc.add_trace(go.Scatter(
+        x=epochs, y=history['accuracy'],
+        mode='lines+markers',
+        name='Training Accuracy',
+        line=dict(color='#2E86AB', width=3),
+        marker=dict(size=8)
+    ))
+    fig_acc.add_trace(go.Scatter(
+        x=epochs, y=history['val_accuracy'],
+        mode='lines+markers',
+        name='Validation Accuracy',
+        line=dict(color='#A23B72', width=3, dash='dash'),
+        marker=dict(size=8)
+    ))
+    fig_acc.update_layout(
+        title='Model Accuracy Over Training',
+        xaxis_title='Epoch',
+        yaxis_title='Accuracy',
+        hovermode='x unified',
+        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    # Loss plot
+    fig_loss = go.Figure()
+    fig_loss.add_trace(go.Scatter(
+        x=epochs, y=history['loss'],
+        mode='lines+markers',
+        name='Training Loss',
+        line=dict(color='#2E86AB', width=3),
+        marker=dict(size=8)
+    ))
+    fig_loss.add_trace(go.Scatter(
+        x=epochs, y=history['val_loss'],
+        mode='lines+markers',
+        name='Validation Loss',
+        line=dict(color='#A23B72', width=3, dash='dash'),
+        marker=dict(size=8)
+    ))
+    fig_loss.update_layout(
+        title='Model Loss Over Training',
+        xaxis_title='Epoch',
+        yaxis_title='Loss',
+        hovermode='x unified',
+        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    return fig_acc, fig_loss
+
 def generate_pdf_report(report_text: str, images: list, file_names: list, results: list) -> bytes:
     """Generate a PDF report with images and classifications."""
     try:
@@ -378,6 +446,52 @@ with tab2:
                     if type_total > 0:
                         type_correct = sum(1 for r, t in zip(results, true_labels) if t == tumor_type and r["label"] == tumor_type)
                         st.write(f"{tumor_type}: {type_correct}/{type_total}")
+
+        # Learning Curves Section
+        st.markdown("---")
+        st.subheader("📈 Training Learning Curves")
+
+        st.markdown("""
+        **Why Learning Curves Matter:**
+
+        Learning curves reveal how the model learned during training. They help us understand:
+
+        - **Model Learning Progress**: Does the model improve consistently over time?
+        - **Overfitting Detection**: If training accuracy is much higher than validation accuracy, the model may be memorizing rather than learning generalizable patterns
+        - **Underfitting Detection**: If both curves plateau at low accuracy, the model may be too simple
+        - **Training Stability**: Smooth curves indicate stable training, while erratic curves suggest instability
+        - **Optimal Training Duration**: Identifies when training should stop (e.g., when validation performance stops improving)
+
+        A well-trained model shows:
+        - Training and validation curves converging at high accuracy
+        - Validation loss stabilizing or slightly increasing (early stopping helps prevent overfitting)
+        - Small gap between training and validation performance
+        """)
+
+        # Load and display learning curves
+        history = load_training_history()
+        if history:
+            fig_acc, fig_loss = create_learning_curves(history)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.plotly_chart(fig_acc, use_container_width=True)
+            with col2:
+                st.plotly_chart(fig_loss, use_container_width=True)
+
+            # Add interpretation
+            final_train_acc = history['accuracy'][-1]
+            final_val_acc = history['val_accuracy'][-1]
+            gap = final_train_acc - final_val_acc
+
+            if gap < 0.05:
+                st.success(f"✅ Excellent generalization: Training-validation gap is only {gap*100:.1f}% - model generalizes well!")
+            elif gap < 0.10:
+                st.info(f"ℹ️ Good generalization: Training-validation gap is {gap*100:.1f}% - acceptable performance")
+            else:
+                st.warning(f"⚠️ Some overfitting detected: Training-validation gap is {gap*100:.1f}% - model may be memorizing training data")
+        else:
+            st.info("Training history not available. Run the training script to generate learning curves.")
 
         # Chat interface
         st.markdown("---")

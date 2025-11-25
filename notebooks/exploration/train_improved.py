@@ -159,11 +159,19 @@ print(f"\n✅ Final Test Accuracy: {test_acc:.4f} ({test_acc*100:.2f}%)")
 print(f"✅ Final Test Loss: {test_loss:.4f}")
 
 # ============================================================================
-# 9. Save Model
+# 9. Save Model and Training History
 # ============================================================================
 export_dir = "brain_tumor_cnn_improved"
 model.export(export_dir)
 print(f"\n✅ Model saved to: {export_dir}")
+
+# Save training history
+import json
+history_path = f"{export_dir}/training_history.json"
+history_dict = {key: [float(v) for v in values] for key, values in history.history.items()}
+with open(history_path, 'w') as f:
+    json.dump(history_dict, f, indent=2)
+print(f"✅ Training history saved to: {history_path}")
 
 # ============================================================================
 # 10. Training Summary
