@@ -1,5 +1,5 @@
 """
-Quick evaluation script for the improved model
+Evaluation script for the trained brain tumor classifier
 """
 import tensorflow as tf
 from tensorflow import keras
@@ -14,7 +14,7 @@ test_ds = keras.utils.image_dataset_from_directory(
     shuffle=False
 )
 
-# Load improved model using TFSMLayer
+# Load model
 model_path = 'brain_tumor_cnn_improved'
 reloaded = tf.saved_model.load(model_path)
 infer = reloaded.signatures['serving_default']
@@ -24,7 +24,6 @@ all_labels = []
 all_preds = []
 
 for images, labels in test_ds:
-    # Predictions
     preds = infer(input_1=images)['output_0']
     pred_classes = tf.argmax(preds, axis=1)
 
@@ -36,11 +35,9 @@ all_labels = np.array(all_labels)
 all_preds = np.array(all_preds)
 accuracy = np.mean(all_labels == all_preds)
 
-print(f'\n========== FINAL RESULTS ==========')
-print(f'Test Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)')
-print(f'===================================')
+print(f'\nTest Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)')
 
 if accuracy >= 0.90:
-    print(f'✅ TARGET ACHIEVED: {accuracy*100:.2f}% >= 90%')
+    print(f'Target achieved: {accuracy*100:.2f}% >= 90%')
 else:
-    print(f'⚠️  Below target: {accuracy*100:.2f}% < 90%')
+    print(f'Below target: {accuracy*100:.2f}% < 90%')

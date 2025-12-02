@@ -1,3 +1,8 @@
+"""
+NeuroSight - Brain Tumor MRI Classification Application
+Streamlit web interface for classifying brain MRI scans using a custom CNN
+"""
+
 import streamlit as st
 import numpy as np
 from PIL import Image
@@ -12,23 +17,20 @@ import plotly.express as px
 import plotly.graph_objects as go
 from prediction import predict_single, predict_batch, LABEL_MAP
 
-# Load environment variables
 load_dotenv()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-# Test data path
 TEST_DATA_PATH = Path(__file__).parent / "data" / "brain-tumor-mri-dataset" / "Testing"
 
-# Custom color definitions - used consistently across all visualizations
 TUMOR_COLORS = {
-    'notumor': '#1d3827',      # Dark green
-    'meningioma': '#1c2d43',   # Dark blue
-    'pituitary': '#3d3b12',    # Dark yellow/olive
-    'glioma': '#3c2427'        # Dark red/brown
+    'notumor': '#1d3827',
+    'meningioma': '#1c2d43',
+    'pituitary': '#3d3b12',
+    'glioma': '#3c2427'
 }
 
 def colored_box(tumor_type: str, content: str):
-    """Create a colored box with custom colors for tumor types."""
+    """Display a colored box for tumor type"""
     color = TUMOR_COLORS.get(tumor_type, '#333333')
     st.markdown(
         f"""
@@ -40,7 +42,7 @@ def colored_box(tumor_type: str, content: str):
     )
 
 def get_random_test_images(n: int) -> list:
-    """Get n random images from test set with their true labels."""
+    """Get n random images from test set with their true labels"""
     all_images = []
     for class_name in ["notumor", "meningioma", "pituitary", "glioma"]:
         class_dir = TEST_DATA_PATH / class_name
@@ -51,36 +53,9 @@ def get_random_test_images(n: int) -> list:
     selected = random.sample(all_images, min(n, len(all_images)))
     return selected
 
-def create_probability_bar(probabilities: dict, title: str = "Prediction Probabilities"):
-    """Create a horizontal stacked bar chart for probabilities."""
-    labels = list(probabilities.keys())
-    values = list(probabilities.values())
-
-    # Create horizontal bar chart
-    fig = go.Figure(go.Bar(
-        x=values,
-        y=['Prediction'],
-        orientation='h',
-        text=[f'{v:.1%}' for v in values],
-        textposition='inside',
-        marker_color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
-    ))
-
-    fig.update_layout(
-        title=title,
-        xaxis_title="Probability",
-        height=100,
-        margin=dict(l=0, r=0, t=30, b=0),
-        showlegend=False,
-        xaxis=dict(range=[0, 1], tickformat='.0%')
-    )
-    return fig
-
 def create_stacked_bar(probabilities: dict):
-    """Create a 100% stacked bar chart for probabilities."""
-
+    """Create a stacked bar chart showing class probabilities"""
     fig = go.Figure()
-    cumsum = 0
     for label, prob in sorted(probabilities.items(), key=lambda x: -x[1]):
         fig.add_trace(go.Bar(
             name=label,
@@ -104,7 +79,7 @@ def create_stacked_bar(probabilities: dict):
     return fig
 
 def create_pie_chart(data: dict, title: str):
-    """Create a pie chart."""
+    """Create a pie chart for data distribution"""
     fig = px.pie(
         values=list(data.values()),
         names=list(data.keys()),
@@ -117,7 +92,7 @@ def create_pie_chart(data: dict, title: str):
     return fig
 
 def load_training_history():
-    """Load training history from JSON file."""
+    """Load training history from JSON file"""
     import json
     history_path = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_improved" / "training_history.json"
     if history_path.exists():
@@ -126,13 +101,12 @@ def load_training_history():
     return None
 
 def create_learning_curves(history: dict):
-    """Create learning curve plots for accuracy and loss."""
+    """Create learning curve plots for accuracy and loss"""
     if not history:
         return None, None
 
     epochs = list(range(1, len(history['accuracy']) + 1))
 
-    # Accuracy plot
     fig_acc = go.Figure()
     fig_acc.add_trace(go.Scatter(
         x=epochs, y=history['accuracy'],
@@ -157,7 +131,6 @@ def create_learning_curves(history: dict):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
 
-    # Loss plot
     fig_loss = go.Figure()
     fig_loss.add_trace(go.Scatter(
         x=epochs, y=history['loss'],
@@ -185,21 +158,17 @@ def create_learning_curves(history: dict):
     return fig_acc, fig_loss
 
 def generate_pdf_report(report_text: str, images: list, file_names: list, results: list) -> bytes:
-    """Generate a PDF report with images and classifications."""
+    """Generate a PDF report with images and classifications"""
     try:
         from fpdf import FPDF
 
-        # Remove emojis and special characters that cause encoding issues
         def clean_text(text):
-            # Remove emojis and special unicode characters
-            text = re.sub(r'[^\x00-\x7F]+', '', text)  # Remove non-ASCII
-            # Remove markdown formatting but preserve structure
-            text = re.sub(r'#{1,6}\s', '', text)  # Remove headers
-            text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # Remove bold
-            text = re.sub(r'\*(.+?)\*', r'\1', text)  # Remove italics (but not list bullets)
-            text = re.sub(r'>\s', '', text)  # Remove blockquotes
-            text = re.sub(r'---+', '', text)  # Remove horizontal lines
-            # Convert markdown bullets to simple dashes for better PDF formatting
+            text = re.sub(r'[^\x00-\x7F]+', '', text)
+            text = re.sub(r'#{1,6}\s', '', text)
+            text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+            text = re.sub(r'\*(.+?)\*', r'\1', text)
+            text = re.sub(r'>\s', '', text)
+            text = re.sub(r'---+', '', text)
             text = re.sub(r'^-\s', '  - ', text, flags=re.MULTILINE)
             return text.strip()
 
@@ -218,7 +187,6 @@ def generate_pdf_report(report_text: str, images: list, file_names: list, result
         pdf.add_page()
         pdf.set_font("Arial", size=11)
 
-        # Add cleaned report content
         cleaned_report = clean_text(report_text)
         pdf.multi_cell(0, 5, cleaned_report)
 
@@ -227,7 +195,6 @@ def generate_pdf_report(report_text: str, images: list, file_names: list, result
         pdf.cell(0, 10, 'Image Classifications', 0, 1)
         pdf.set_font("Arial", size=10)
 
-        # Add images and their classifications
         for idx, (img, file_name, result) in enumerate(zip(images, file_names, results)):
             pdf.ln(5)
             pdf.set_font("Arial", 'B', 11)
@@ -235,7 +202,6 @@ def generate_pdf_report(report_text: str, images: list, file_names: list, result
             pdf.set_font("Arial", size=10)
             pdf.cell(0, 5, f"Classification: {result['label'].title()} (Confidence: {result['confidence']:.1%})", 0, 1)
 
-            # Save image temporarily and add to PDF
             temp_img_path = f"/tmp/temp_img_{idx}_{int(time.time())}.jpg"
             img_pil = Image.fromarray(img)
             if img_pil.mode == 'RGBA':
@@ -245,10 +211,8 @@ def generate_pdf_report(report_text: str, images: list, file_names: list, result
             else:
                 img_pil.convert('RGB').save(temp_img_path)
 
-            # Add image to PDF (scaled to fit)
             pdf.image(temp_img_path, x=10, w=100)
 
-            # Clean up temp file
             try:
                 os.remove(temp_img_path)
             except:
@@ -256,33 +220,15 @@ def generate_pdf_report(report_text: str, images: list, file_names: list, result
 
             pdf.ln(5)
 
-        # Return PDF as bytes (fpdf 1.7.2 returns string, needs encoding)
         pdf_output = pdf.output(dest='S')
         if isinstance(pdf_output, bytes):
             return pdf_output
         else:
-            # fpdf 1.7.2 returns str, encode to bytes
             return pdf_output.encode('latin-1')
     except ImportError:
         raise ImportError("PDF generation requires 'fpdf' library. Install with: pip install fpdf")
     except Exception as e:
         raise Exception(f"Error generating PDF: {str(e)}")
-
-def get_chat_response(api_key: str, results: list, true_labels: list = None):
-    """Get treatment recommendations from Claude."""
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key)
-
-    # Build context
-    context = "Based on the MRI brain scan analysis:\n\n"
-    for i, result in enumerate(results):
-        context += f"Image {i+1}: Predicted {result['label']} with {result['confidence']:.1%} confidence"
-        if true_labels:
-            context += f" (True label: {true_labels[i]})"
-        context += "\n"
-
-    return context
 
 st.set_page_config(
     page_title="Brain Tumor Classification",
@@ -290,25 +236,20 @@ st.set_page_config(
     layout="wide"
 )
 
-# Disable any potential notification sounds with custom CSS
 st.markdown("""
     <style>
-    /* Hide Streamlit notification toasts that might trigger sounds */
     .stToast {
         display: none !important;
     }
-
-    /* Disable any audio elements */
     audio {
         display: none !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🧠 Brain Tumor MRI Classification")
+st.title("NeuroSight - Brain Tumor MRI Classification")
 st.markdown("Upload MRI brain scans to classify tumor types using a custom CNN.")
 
-# Sidebar info
 with st.sidebar:
     st.header("About")
     st.markdown("""
@@ -320,39 +261,25 @@ with st.sidebar:
     - **Pituitary** - pituitary gland tumor
     - **Glioma** - malignant tumor
 
-    ⚠️ For educational purposes only
+    For educational purposes only
     """)
 
-# Tabs for different input methods
 tab1, tab2, tab3 = st.tabs(["Upload Images", "Test Model Performance", "About"])
-
-with tab1:
-    # File uploader
-    uploaded_files = st.file_uploader(
-        "Upload MRI images (1-10 images)",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
-        key="file_uploader_tab1"
-    )
 
 with tab2:
     st.markdown("**Select random images from the test dataset**")
 
-    # Slider for number of images
     num_images = st.slider("Number of random images to test", min_value=1, max_value=100, value=10)
 
-    # Button to load random images
     if st.button("Load Random Test Images", type="primary"):
         test_images = get_random_test_images(num_images)
         st.session_state['test_images'] = test_images
 
-    # Display and process test images if loaded
     if 'test_images' in st.session_state and st.session_state['test_images']:
         test_images = st.session_state['test_images']
         st.markdown(f"**{len(test_images)} {'image' if len(test_images) == 1 else 'images'} loaded**")
 
         with st.spinner("Processing images..."):
-            # Load images
             images = []
             true_labels = []
             file_names = []
@@ -363,21 +290,17 @@ with tab2:
                 true_labels.append(true_label)
                 file_names.append(img_path.name)
 
-            # Get predictions
             if len(images) == 1:
                 results = [predict_single(images[0])]
             else:
                 results = predict_batch(images)
 
-        # Store results for chat
         st.session_state['results'] = results
         st.session_state['true_labels'] = true_labels
 
-        # Display results
         st.markdown("---")
         st.subheader("Results")
 
-        # Create columns for display
         cols_per_row = min(len(images), 3)
 
         for i in range(0, len(images), cols_per_row):
@@ -388,35 +311,27 @@ with tab2:
                     break
 
                 with col:
-                    # Display image
                     st.image(images[idx], caption=file_names[idx], use_container_width=True)
-
-                    # Display true label
                     st.info(f"**True: {true_labels[idx]}**")
 
-                    # Display prediction
                     result = results[idx]
                     label = result["label"]
                     confidence = result["confidence"]
 
-                    # Color code based on correctness
                     if label == true_labels[idx]:
-                        st.success(f"**Predicted: {label}** ({confidence:.1%}) ✓")
+                        st.success(f"**Predicted: {label}** ({confidence:.1%})")
                     else:
-                        st.error(f"**Predicted: {label}** ({confidence:.1%}) ✗")
+                        st.error(f"**Predicted: {label}** ({confidence:.1%})")
 
-                    # Probability bar chart
                     st.plotly_chart(create_stacked_bar(result["probabilities"]), use_container_width=True)
 
-        # Analysis section
         st.markdown("---")
-        st.subheader("📊 Analysis")
+        st.subheader("Analysis")
 
         if len(results) > 1:
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                # True label distribution
                 true_counts = {}
                 for label in true_labels:
                     true_counts[label] = true_counts.get(label, 0) + 1
@@ -424,7 +339,6 @@ with tab2:
                 st.plotly_chart(fig, use_container_width=True)
 
             with col2:
-                # Predicted label distribution
                 pred_counts = {}
                 for result in results:
                     pred_counts[result["label"]] = pred_counts.get(result["label"], 0) + 1
@@ -432,14 +346,12 @@ with tab2:
                 st.plotly_chart(fig, use_container_width=True)
 
             with col3:
-                # Accuracy metrics
                 correct = sum(1 for r, t in zip(results, true_labels) if r["label"] == t)
                 accuracy = correct / len(results)
 
                 st.metric("Overall Accuracy", f"{accuracy:.0%}")
                 st.metric("Correct Predictions", f"{correct}/{len(results)}")
 
-                # Per-class accuracy
                 st.markdown("**Per-class Performance:**")
                 for tumor_type in ["notumor", "meningioma", "pituitary", "glioma"]:
                     type_total = sum(1 for t in true_labels if t == tumor_type)
@@ -447,28 +359,17 @@ with tab2:
                         type_correct = sum(1 for r, t in zip(results, true_labels) if t == tumor_type and r["label"] == tumor_type)
                         st.write(f"{tumor_type}: {type_correct}/{type_total}")
 
-        # Learning Curves Section
         st.markdown("---")
-        st.subheader("📈 Training Learning Curves")
+        st.subheader("Training Learning Curves")
 
         st.markdown("""
-        **Why Learning Curves Matter:**
-
-        Learning curves reveal how the model learned during training. They help us understand:
-
-        - **Model Learning Progress**: Does the model improve consistently over time?
-        - **Overfitting Detection**: If training accuracy is much higher than validation accuracy, the model may be memorizing rather than learning generalizable patterns
-        - **Underfitting Detection**: If both curves plateau at low accuracy, the model may be too simple
-        - **Training Stability**: Smooth curves indicate stable training, while erratic curves suggest instability
-        - **Optimal Training Duration**: Identifies when training should stop (e.g., when validation performance stops improving)
-
-        A well-trained model shows:
-        - Training and validation curves converging at high accuracy
-        - Validation loss stabilizing or slightly increasing (early stopping helps prevent overfitting)
-        - Small gap between training and validation performance
+        Learning curves show how the model learned during training. They help identify:
+        - Model learning progress over epochs
+        - Overfitting (training accuracy much higher than validation)
+        - Underfitting (both curves plateau at low accuracy)
+        - Training stability and optimal duration
         """)
 
-        # Load and display learning curves
         history = load_training_history()
         if history:
             fig_acc, fig_loss = create_learning_curves(history)
@@ -479,54 +380,45 @@ with tab2:
             with col2:
                 st.plotly_chart(fig_loss, use_container_width=True)
 
-            # Add interpretation
             final_train_acc = history['accuracy'][-1]
             final_val_acc = history['val_accuracy'][-1]
             gap = final_train_acc - final_val_acc
 
             if gap < 0.05:
-                st.success(f"✅ Excellent generalization: Training-validation gap is only {gap*100:.1f}% - model generalizes well!")
+                st.success(f"Excellent generalization: Training-validation gap is only {gap*100:.1f}%")
             elif gap < 0.10:
-                st.info(f"ℹ️ Good generalization: Training-validation gap is {gap*100:.1f}% - acceptable performance")
+                st.info(f"Good generalization: Training-validation gap is {gap*100:.1f}%")
             else:
-                st.warning(f"⚠️ Some overfitting detected: Training-validation gap is {gap*100:.1f}% - model may be memorizing training data")
+                st.warning(f"Some overfitting detected: Training-validation gap is {gap*100:.1f}%")
         else:
             st.info("Training history not available. Run the training script to generate learning curves.")
 
-        # Chat interface
         st.markdown("---")
-        st.subheader("📊 Model Performance Analysis Assistant")
+        st.subheader("Model Performance Analysis")
 
         if ANTHROPIC_API_KEY:
-            # Initialize chat history
             if "messages" not in st.session_state:
                 st.session_state.messages = []
 
-            # Display chat history
             for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-            # Chat input
             if prompt := st.chat_input("Ask about model performance, accuracy patterns, or misclassifications..."):
-                # Add user message
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 with st.chat_message("user"):
                     st.markdown(prompt)
 
-                # Get AI response
                 with st.chat_message("assistant"):
-                    with st.spinner("Analyzing model performance..."):
+                    with st.spinner("Analyzing..."):
                         import anthropic
 
                         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-                        # Build context for model performance analysis - includes BOTH predictions and ground truth
-                        context = "You are an AI model performance analyst. Analyze the classification results and help identify patterns, strengths, and weaknesses. "
-                        context += "You have access to both predicted labels and true labels for model evaluation.\n\n"
+                        context = "You are analyzing model performance on a brain tumor classification task. "
+                        context += "Help identify patterns, strengths, and weaknesses.\n\n"
                         context += "**Test Results:**\n\n"
 
-                        # Include both predictions and ground truth
                         correct_count = 0
                         for i, (result, true_label) in enumerate(zip(results, true_labels)):
                             pred_label = result['label']
@@ -535,35 +427,26 @@ with tab2:
                                 correct_count += 1
 
                             context += f"Scan {i+1}:\n"
-                            context += f"  - True Label: {true_label.upper()}\n"
-                            context += f"  - Predicted: {pred_label.upper()} (confidence: {result['confidence']:.1%})\n"
+                            context += f"  - True: {true_label.upper()}\n"
+                            context += f"  - Predicted: {pred_label.upper()} ({result['confidence']:.1%})\n"
                             context += f"  - Result: {'CORRECT' if is_correct else 'INCORRECT'}\n"
 
-                            # Show all probabilities for misclassifications
                             if not is_correct:
-                                context += "  - All probabilities: "
+                                context += "  - Probabilities: "
                                 sorted_probs = sorted(result['probabilities'].items(), key=lambda x: -x[1])
                                 context += ", ".join([f"{label}: {prob:.1%}" for label, prob in sorted_probs])
                                 context += "\n"
                             context += "\n"
 
                         context += f"\n**Overall Accuracy: {correct_count}/{len(results)} ({correct_count/len(results):.1%})**\n\n"
-                        context += "Analyze the model's performance, identify patterns in correct/incorrect predictions, "
-                        context += "discuss potential issues with specific tumor types, and suggest areas for improvement. "
-                        context += "You can reference specific scans by number when discussing examples."
-
-                        # Build message content
-                        user_message = context + "\n\nUser question: " + prompt
+                        context += "User question: " + prompt
 
                         response = client.messages.create(
                             model="claude-sonnet-4-20250514",
                             max_tokens=1024,
-                            messages=[
-                                {"role": "user", "content": user_message}
-                            ]
+                            messages=[{"role": "user", "content": context}]
                         )
 
-                        # Get the text content from the response
                         assistant_message = ""
                         for block in response.content:
                             if hasattr(block, 'text'):
@@ -575,18 +458,22 @@ with tab2:
             st.warning("API key not configured. Set ANTHROPIC_API_KEY in .env file.")
 
 with tab1:
+    uploaded_files = st.file_uploader(
+        "Upload MRI images (1-10 images)",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key="file_uploader_tab1"
+    )
+
     if uploaded_files:
-        # Limit to 10 images
         if len(uploaded_files) > 10:
             st.warning("Maximum 10 images allowed. Only the first 10 will be processed.")
             uploaded_files = uploaded_files[:10]
 
         st.markdown(f"**{len(uploaded_files)} {'image' if len(uploaded_files) == 1 else 'images'} uploaded**")
 
-        # Process button
         if st.button("Classify Images", type="primary", key="classify_btn_tab1"):
             with st.spinner("Processing images..."):
-                # Load images
                 images = []
                 file_names = []
                 for file in uploaded_files:
@@ -595,19 +482,16 @@ with tab1:
                     images.append(img_array)
                     file_names.append(file.name)
 
-                # Get predictions
                 if len(images) == 1:
                     results = [predict_single(images[0])]
                 else:
                     results = predict_batch(images)
 
-                # Store in session state
                 st.session_state['tab1_results'] = results
                 st.session_state['tab1_images'] = images
                 st.session_state['tab1_file_names'] = file_names
-                st.session_state['tab1_report_generated'] = False  # Flag to trigger report generation
+                st.session_state['tab1_report_generated'] = False
 
-        # Display results from session state
         if 'tab1_results' in st.session_state and st.session_state['tab1_results']:
             results = st.session_state['tab1_results']
             images = st.session_state['tab1_images']
@@ -616,7 +500,6 @@ with tab1:
             st.markdown("---")
             st.subheader("Results")
 
-            # Create columns for display
             cols_per_row = min(len(images), 3)
 
             for i in range(0, len(images), cols_per_row):
@@ -627,26 +510,19 @@ with tab1:
                         break
 
                     with col:
-                        # Display image
                         st.image(images[idx], caption=file_names[idx], use_container_width=True)
 
-                        # Display prediction with color coding matching Tab 3
                         result = results[idx]
                         label = result["label"]
                         confidence = result["confidence"]
 
-                        # Color code based on tumor type (using custom colors)
                         colored_box(label, f"<strong>{label.upper()}</strong><br><br>Confidence: {confidence:.1%}")
-
-                        # Probability bar chart
                         st.plotly_chart(create_stacked_bar(result["probabilities"]), use_container_width=True)
 
-            # Summary statistics
             if len(results) > 1:
                 st.markdown("---")
                 st.subheader("Summary")
 
-                # Pie chart of predictions
                 pred_counts = {}
                 for result in results:
                     pred_counts[result["label"]] = pred_counts.get(result["label"], 0) + 1
@@ -654,148 +530,103 @@ with tab1:
                 fig = create_pie_chart(pred_counts, "Prediction Distribution")
                 st.plotly_chart(fig, use_container_width=True)
 
-            # Auto-generate report after displaying predictions (if not already generated)
             if ANTHROPIC_API_KEY and 'tab1_report_generated' in st.session_state and not st.session_state['tab1_report_generated']:
                 with st.spinner("Generating medical report..."):
                     import anthropic
                     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-                    # Build context for report generation with improved formatting
-                    context = """You are a medical AI assistant. Generate a comprehensive, well-formatted medical report based on the following MRI brain scan analysis.
-
-CRITICAL FORMATTING GUIDELINES:
-- Use proper title case for section headers (not ALL CAPS)
-- Use markdown formatting with ### for main sections
-- Add horizontal lines (---) between major sections for visual separation
-- Use bullet points for all content within each section
-- Each bullet point MUST start on a new line
-- Use markdown bullet format: "- " at the start of each line
-- Keep bullet points clear, concise, and professional
-- Add > blockquotes for important clinical notes
-- Keep formatting clean, professional, and easy to read
-
-"""
-                    context += "**MRI Analysis Results:**\n\n"
+                    context = "Generate a medical report for these MRI scan results. Use professional formatting with bullet points.\n\n"
+                    context += "**Scan Results:**\n\n"
                     for i, result in enumerate(results):
                         context += f"Scan {i+1} ({file_names[i]}): "
-                        context += f"Primary diagnosis is {result['label'].title()} with {result['confidence']:.1%} confidence. "
+                        context += f"{result['label'].title()} with {result['confidence']:.1%} confidence"
                         if result['confidence'] < 0.8:
                             sorted_probs = sorted(result['probabilities'].items(), key=lambda x: -x[1])
-                            context += f"Alternative possibilities include {sorted_probs[1][0].title()} ({sorted_probs[1][1]:.1%})"
-                            if len(sorted_probs) > 2 and sorted_probs[1][1] > 0.1:
-                                context += f" and {sorted_probs[2][0].title()} ({sorted_probs[2][1]:.1%})"
-                            context += ". "
-                        context += "\n\n"
+                            context += f". Alternative: {sorted_probs[1][0].title()} ({sorted_probs[1][1]:.1%})"
+                        context += "\n"
 
-                    context += """Generate a professional medical report with these sections. Use bullet points for all content:
+                    context += """
+Include these sections with bullet points:
 
 ### Patient Scan Summary
-- List each scan analyzed with key findings
-- Include overall assessment
-- Note any patterns observed across multiple scans
+- List each scan with findings
+- Overall assessment
 
 ### Findings
-- Provide detailed findings for each scan
-- Include clinical observations
-- Note confidence levels and any alternative diagnoses
-- Describe imaging characteristics
+- Detailed findings per scan
+- Confidence levels
 
 ### Clinical Significance
-- Explain what these findings mean for patient care
-- Discuss prognosis implications
-- Note urgency level if applicable
-- Highlight critical findings
+- Implications for patient care
+- Prognosis
 
 ### Recommendations
-- List recommended next steps
-- Specify specialist referrals needed
-- Outline follow-up care requirements
-- Include imaging recommendations
-- Note treatment considerations
+- Next steps
+- Specialist referrals
+- Follow-up requirements
 
 ### Medical Disclaimer
-> This analysis has been generated with AI assistance and requires review and validation by a qualified medical specialist before any clinical decisions are made.
-
-IMPORTANT: Use bullet points (- ) for ALL content in every section. Each bullet point must start on a new line."""
+> This analysis is AI-assisted and requires review by a qualified medical specialist before clinical decisions.
+"""
 
                     response = client.messages.create(
                         model="claude-sonnet-4-20250514",
                         max_tokens=2048,
-                        messages=[
-                            {"role": "user", "content": context}
-                        ]
+                        messages=[{"role": "user", "content": context}]
                     )
 
-                    # Extract report text
                     report_text = ""
                     for block in response.content:
                         if hasattr(block, 'text'):
                             report_text += block.text
 
-                    # Store report in session state
                     st.session_state['tab1_report'] = report_text
                     st.session_state['tab1_report_generated'] = True
 
-                    # Initialize chat history with the report
                     st.session_state['messages_tab1'] = [
                         {"role": "assistant", "content": report_text}
                     ]
 
-            # Chat interface for report editing
             st.markdown("---")
-            st.subheader("💬 Refine Report with AI Assistant")
-            st.markdown("*You can ask Claude to edit the report, add details, change recommendations, etc.*")
+            st.subheader("Refine Report")
+            st.markdown("*Ask Claude to edit the report, add details, or change recommendations*")
 
             if ANTHROPIC_API_KEY:
-                # Initialize chat history for tab1 if not exists
                 if "messages_tab1" not in st.session_state:
                     st.session_state.messages_tab1 = []
 
-                # Display chat history (including the initial report)
                 for message in st.session_state.messages_tab1:
                     with st.chat_message(message["role"]):
                         st.markdown(message["content"])
 
-                # Chat input
-                if prompt := st.chat_input("Request changes to the report (e.g., 'Add more detail to the recommendations section')...", key="chat_tab1"):
-                    # Add user message
+                if prompt := st.chat_input("Request changes to the report...", key="chat_tab1"):
                     st.session_state.messages_tab1.append({"role": "user", "content": prompt})
                     with st.chat_message("user"):
                         st.markdown(prompt)
 
-                    # Get AI response
                     with st.chat_message("assistant"):
                         with st.spinner("Updating report..."):
                             import anthropic
 
                             client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-                            # Build conversation history with context
                             conversation_messages = []
 
-                            # Add system context as first user message
-                            system_context = "You are a medical AI assistant helping refine a medical report. "
-                            system_context += "The user can request edits, additions, or clarifications to the report. "
-                            system_context += "When editing, provide the COMPLETE updated report with all sections, not just the changed parts. "
-                            system_context += "IMPORTANT: Maintain bullet point formatting - use markdown bullets (- ) and each bullet MUST start on a new line. "
-                            system_context += "All content within sections should be in bullet point format.\n\n"
+                            system_context = "You are editing a medical report. Provide the complete updated report with all sections. Use bullet points.\n\n"
 
-                            # Add all previous messages
                             for i, msg in enumerate(st.session_state.messages_tab1):
                                 if i == 0:
-                                    # First message is the original report
                                     conversation_messages.append({
                                         "role": "user",
-                                        "content": system_context + "Here is the initial report:\n\n" + msg["content"]
+                                        "content": system_context + "Initial report:\n\n" + msg["content"]
                                     })
                                     conversation_messages.append({
                                         "role": "assistant",
-                                        "content": "I've generated the medical report. You can ask me to make any changes or additions you'd like."
+                                        "content": "Report generated. Request any changes."
                                     })
                                 else:
                                     conversation_messages.append(msg)
 
-                            # Add current user prompt
                             conversation_messages.append({
                                 "role": "user",
                                 "content": prompt
@@ -807,7 +638,6 @@ IMPORTANT: Use bullet points (- ) for ALL content in every section. Each bullet 
                                 messages=conversation_messages
                             )
 
-                            # Get the text content from the response
                             assistant_message = ""
                             for block in response.content:
                                 if hasattr(block, 'text'):
@@ -815,39 +645,29 @@ IMPORTANT: Use bullet points (- ) for ALL content in every section. Each bullet 
 
                             st.markdown(assistant_message)
                             st.session_state.messages_tab1.append({"role": "assistant", "content": assistant_message})
-
-                            # Update the stored report with the latest version
                             st.session_state['tab1_report'] = assistant_message
-
-                            # Force a rerun to update the PDF download button
                             st.rerun()
             else:
                 st.warning("API key not configured. Set ANTHROPIC_API_KEY in .env file.")
 
-            # PDF Download Section
             if 'tab1_report' in st.session_state and st.session_state['tab1_report']:
                 st.markdown("---")
-                st.subheader("📄 Download Report as PDF")
+                st.subheader("Download Report")
 
                 try:
-                    # Get the latest report from chat history (last assistant message)
                     latest_report = st.session_state['tab1_report']
                     if 'messages_tab1' in st.session_state and len(st.session_state['messages_tab1']) > 0:
-                        # Get the last assistant message which is the most recent report
                         for msg in reversed(st.session_state['messages_tab1']):
                             if msg['role'] == 'assistant':
                                 latest_report = msg['content']
                                 break
 
-                    # Generate PDF and create download button
                     with st.spinner("Generating PDF..."):
                         pdf_bytes = generate_pdf_report(latest_report, images, file_names, results)
 
-                        if not pdf_bytes or len(pdf_bytes) == 0:
-                            st.error("PDF generation returned empty data. Please check the report content.")
-                        else:
+                        if pdf_bytes and len(pdf_bytes) > 0:
                             st.download_button(
-                                label="📄 Download PDF Report",
+                                label="Download PDF Report",
                                 data=pdf_bytes,
                                 file_name=f"neurosight_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                                 mime="application/pdf",
@@ -855,19 +675,18 @@ IMPORTANT: Use bullet points (- ) for ALL content in every section. Each bullet 
                                 type="primary",
                                 use_container_width=True
                             )
-                            st.success(f"PDF ready! Size: {len(pdf_bytes) / 1024:.1f} KB")
+                            st.success(f"PDF ready ({len(pdf_bytes) / 1024:.1f} KB)")
+                        else:
+                            st.error("PDF generation returned empty data.")
                 except Exception as e:
                     st.error(f"Error generating PDF: {str(e)}")
                     import traceback
                     st.code(traceback.format_exc())
-                    st.info("Tip: Make sure all images loaded correctly and the report was generated.")
 
-            # Save labeled images section
             st.markdown("---")
-            st.subheader("💾 Save Labeled Images to Training Data")
-            st.markdown("*If you know the confirmed diagnosis, please verify the label below and save the scan to improve future model training.*")
+            st.subheader("Save Labeled Images to Training Data")
+            st.markdown("*Verify the label and save to improve future model training*")
 
-            # Create columns for labeling each image
             for idx, (img, file_name, result) in enumerate(zip(images, file_names, results)):
                 with st.expander(f"Label Image {idx+1}: {file_name}", expanded=True):
                     col1, col2 = st.columns([1, 2])
@@ -884,18 +703,14 @@ IMPORTANT: Use bullet points (- ) for ALL content in every section. Each bullet 
                             key=f"label_select_{idx}"
                         )
 
-                        # Save button that saves to backend
-                        if st.button(f"💾 Save to Training Data", key=f"save_file_{idx}", type="primary"):
-                            # Create directory for labeled data
+                        if st.button(f"Save to Training Data", key=f"save_file_{idx}", type="primary"):
                             save_dir = Path(__file__).parent / "data" / "labeled_training" / true_label
                             save_dir.mkdir(parents=True, exist_ok=True)
 
-                            # Generate filename with timestamp
                             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                             original_name = Path(file_name).stem
                             save_path = save_dir / f"{original_name}_{timestamp}.jpg"
 
-                            # Convert and save image
                             img_pil = Image.fromarray(img)
                             if img_pil.mode == 'RGBA':
                                 rgb_img = Image.new('RGB', img_pil.size, (255, 255, 255))
@@ -904,7 +719,7 @@ IMPORTANT: Use bullet points (- ) for ALL content in every section. Each bullet 
                             else:
                                 img_pil.convert('RGB').save(save_path)
 
-                            st.success(f"✓ Saved to backend: {save_path.relative_to(Path(__file__).parent)}")
+                            st.success(f"Saved to: {save_path.relative_to(Path(__file__).parent)}")
 
     else:
         st.info("Please upload one or more MRI brain scan images to get started.")
@@ -916,10 +731,9 @@ with tab3:
 
     st.subheader("Vision")
     st.markdown("""
-    Brain tumors are increasingly common and remain a major cause of mortality. Their
-    interpretation requires time, experience and consistency. **NeuroSight** supports radiologists
-    with fast and accurate image classification and an integrated interface for clinical reasoning
-    and treatment planning. The goal is not to replace expert judgment but to strengthen it.
+    Brain tumors require expert interpretation that is time-intensive and prone to variability.
+    NeuroSight assists radiologists with fast, accurate classification and provides an integrated
+    interface for clinical reasoning and treatment planning.
     """)
 
     st.markdown("---")
@@ -927,12 +741,11 @@ with tab3:
     st.subheader("Problem Statement")
     st.markdown("""
     MRI interpretation is demanding and workloads continue to rise. Subtle tumor patterns are
-    easy to overlook, and manual review slows down treatment decisions. NeuroSight
-    addresses this by classifying scans into four categories and providing structured support for
-    the next diagnostic or therapeutic steps.
+    easy to overlook, slowing treatment decisions. NeuroSight classifies scans into four
+    categories and provides structured support for next steps.
     """)
 
-    st.markdown("**The four categories are:**")
+    st.markdown("**The four categories:**")
 
     col1, col2 = st.columns(2)
 
@@ -944,21 +757,21 @@ with tab3:
 
         colored_box('meningioma', """
         <strong>Meningioma</strong><br>
-        Usually slow-growing tumors arising from the meninges, treated
-        through monitoring or surgery depending on growth and location.
+        Usually slow-growing tumors from the meninges, treated
+        through monitoring or surgery.
         """)
 
     with col2:
         colored_box('pituitary', """
         <strong>Pituitary Tumor</strong><br>
         Tumors near the pituitary gland that may affect hormone
-        regulation and require a distinct clinical pathway.
+        regulation.
         """)
 
         colored_box('glioma', """
         <strong>Glioma</strong><br>
-        Tumors originating from glial cells, often requiring early planning for
-        surgery, radiotherapy or chemotherapy.
+        Tumors from glial cells, often requiring surgery,
+        radiotherapy or chemotherapy.
         """)
 
     st.markdown("---")
@@ -967,35 +780,24 @@ with tab3:
 
     st.markdown("### 1. Upload & Diagnose")
     st.markdown("""
-    In the first tab, users upload an MRI scan.
-
-    The system classifies the image and shows a confidence breakdown as a stacked bar chart.
-
-    Below the result, a medical assistant interface helps refine reasoning and explore next steps
-    based on the model output.
+    Upload an MRI scan and the system classifies it with a confidence breakdown.
+    A medical assistant interface helps refine reasoning and explore next steps.
     """)
 
     st.markdown("### 2. Test Model Performance")
     st.markdown("""
-    In the second tab, users select how many random dataset images to test.
-
-    The system classifies them, compares predictions with actuals and displays:
-    - A pie chart of predicted vs. actual classifications
-    - Accuracy scores for the selected sample
+    Select random dataset images to test. The system classifies them, compares with
+    actuals, and displays accuracy metrics and distributions.
     """)
 
-    st.markdown("### 3. Vision & Explanation (This Tab)")
+    st.markdown("### 3. Vision & Explanation")
     st.markdown("""
-    This tab presents the project motivation, medical context and a clear overview of how
-    NeuroSight supports radiological workflows.
-
-    It explains why fast and consistent classification matters and outlines how each feature
-    contributes to safer and more efficient decision-making.
+    This tab explains the project motivation, medical context, and how NeuroSight
+    supports radiological workflows.
     """)
 
-# Footer
 st.markdown("---")
 st.markdown(
-    "<small>Model: Custom CNN trained on Brain Tumor MRI Dataset | ⚠️ For educational purposes only</small>",
+    "<small>Model: Custom CNN trained on Brain Tumor MRI Dataset | For educational purposes only</small>",
     unsafe_allow_html=True
 )
