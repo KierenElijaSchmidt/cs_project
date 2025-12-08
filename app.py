@@ -15,7 +15,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import plotly.express as px
 import plotly.graph_objects as go
-from prediction import predict_single, predict_batch, LABEL_MAP
+from prediction import predict_single, predict_batch, LABEL_MAP, generate_gradcam, apply_gradcam_overlay
 
 load_dotenv()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -460,12 +460,18 @@ with tab2:
 with tab1:
     st.markdown("### Choose Upload Option")
 
-    upload_option = st.radio(
-        "Select how many scans you want to upload:",
-        ["Upload 1 scan", "Upload several scans (2-10)"],
-        key="upload_option_tab1",
-        horizontal=True
-    )
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        upload_option = st.radio(
+            "Select how many scans you want to upload:",
+            ["Upload 1 scan", "Upload several scans (2-10)"],
+            key="upload_option_tab1",
+            horizontal=True
+        )
+
+    with col2:
+        show_gradcam = st.checkbox("Show Grad-CAM visualization", value=False, help="Highlight regions the model focused on for classification")
 
     st.markdown("---")
 
@@ -509,10 +515,27 @@ with tab1:
                 st.session_state['tab1_file_names'] = file_names
                 st.session_state['tab1_report_generated'] = False
 
+                # Generate Grad-CAM heatmaps if requested
+                if show_gradcam:
+                    with st.spinner("Generating Grad-CAM visualizations..."):
+                        gradcam_images = []
+                        for img in images:
+                            try:
+                                heatmap = generate_gradcam(img)
+                                gradcam_overlay = apply_gradcam_overlay(img, heatmap, alpha=0.5)
+                                gradcam_images.append(gradcam_overlay)
+                            except Exception as e:
+                                st.warning(f"Could not generate Grad-CAM for one image: {str(e)}")
+                                gradcam_images.append(None)
+                        st.session_state['tab1_gradcam'] = gradcam_images
+                else:
+                    st.session_state['tab1_gradcam'] = None
+
         if 'tab1_results' in st.session_state and st.session_state['tab1_results']:
             results = st.session_state['tab1_results']
             images = st.session_state['tab1_images']
             file_names = st.session_state['tab1_file_names']
+            gradcam_images = st.session_state.get('tab1_gradcam', None)
 
             st.markdown("---")
             st.subheader("Results")
@@ -527,7 +550,16 @@ with tab1:
                         break
 
                     with col:
-                        st.image(images[idx], caption=file_names[idx], width=300)
+                        # Show Grad-CAM if available
+                        if gradcam_images and idx < len(gradcam_images) and gradcam_images[idx] is not None:
+                            tab_orig, tab_gradcam = st.tabs(["Original", "Grad-CAM"])
+                            with tab_orig:
+                                st.image(images[idx], caption=file_names[idx], width=300)
+                            with tab_gradcam:
+                                st.image(gradcam_images[idx], caption=f"{file_names[idx]} - Grad-CAM", width=300)
+                                st.caption("Red areas indicate regions the model focused on most")
+                        else:
+                            st.image(images[idx], caption=file_names[idx], width=300)
 
                         result = results[idx]
                         label = result["label"]
