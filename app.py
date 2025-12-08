@@ -458,12 +458,29 @@ with tab2:
             st.warning("API key not configured. Set ANTHROPIC_API_KEY in .env file.")
 
 with tab1:
+    st.markdown("### Choose Upload Option")
+
+    upload_option = st.radio(
+        "Select how many scans you want to upload:",
+        ["Upload 1 scan", "Upload several scans (2-10)"],
+        key="upload_option_tab1",
+        horizontal=True
+    )
+
+    st.markdown("---")
+
+    max_files = 1 if upload_option == "Upload 1 scan" else 10
+    accept_multiple = upload_option == "Upload several scans (2-10)"
+
     uploaded_files = st.file_uploader(
-        "Upload MRI images (1-10 images)",
+        f"{'Upload your MRI scan' if max_files == 1 else 'Upload your MRI scans (2-10 images)'}",
         type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
+        accept_multiple_files=accept_multiple,
         key="file_uploader_tab1"
     )
+
+    if not accept_multiple and uploaded_files:
+        uploaded_files = [uploaded_files]
 
     if uploaded_files:
         if len(uploaded_files) > 10:
@@ -510,7 +527,7 @@ with tab1:
                         break
 
                     with col:
-                        st.image(images[idx], caption=file_names[idx], use_container_width=True)
+                        st.image(images[idx], caption=file_names[idx], width=300)
 
                         result = results[idx]
                         label = result["label"]
@@ -692,7 +709,7 @@ Include these sections with bullet points:
                     col1, col2 = st.columns([1, 2])
 
                     with col1:
-                        st.image(img, use_container_width=True)
+                        st.image(img, width=300)
 
                     with col2:
                         st.markdown(f"**Predicted:** {result['label']} ({result['confidence']:.1%})")
