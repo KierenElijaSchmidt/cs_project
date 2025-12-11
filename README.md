@@ -2,7 +2,7 @@
 
 A deep learning application for classifying brain MRI scans into four categories: glioma, meningioma, pituitary tumor, and no tumor. Built with TensorFlow and Streamlit, achieving ~90% test accuracy.
 
-**Pre-trained models available on [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models)**
+**The trained model is available on [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models) so you don't need to train it yourself.**
 
 ## Features
 
@@ -25,7 +25,7 @@ A deep learning application for classifying brain MRI scans into four categories
 
 ## Installation
 
-**Note:** This repository does not include the trained models due to file size. You can download pre-trained models from [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models) or train them yourself (see Model Setup section).
+**Note:** The trained models are not included in this repository due to file size. Download them from [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models) where they have been uploaded for you, or train them yourself (see Model Setup section).
 
 ### Prerequisites
 
@@ -100,9 +100,9 @@ data/brain-tumor-mri-dataset/
 
 The trained models are required to run the application but are not included in the repository. You have two options:
 
-**Option 1: Download Pre-trained Models (Recommended)**
+**Option 1: Download from Hugging Face (Recommended)**
 
-Download the pre-trained models from Hugging Face:
+The trained models have been uploaded to Hugging Face for easy access. Download them with:
 
 ```bash
 cd notebooks/exploration
@@ -273,7 +273,7 @@ This is an educational project and should not be used for medical diagnosis. The
 ## Acknowledgments
 
 - Dataset: Masoud Nickparvar on Kaggle
-- Pre-trained models: Available on [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models)
+- Trained models hosted on [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models)
 - AI integration: Anthropic Claude API
 - Frameworks: Streamlit and TensorFlow
 
