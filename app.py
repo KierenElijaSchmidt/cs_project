@@ -1,6 +1,6 @@
 """
 NeuroSight - Brain Tumor MRI Classification Application
-Streamlit web interface for classifying brain MRI scans using a custom CNN
+Streamlit web interface for classifying brain MRI scans using a custom Convolutional Neural Network (CNN)
 """
 
 import streamlit as st
@@ -345,7 +345,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("NeuroSight - Brain Tumor MRI Classification")
-st.markdown("Upload MRI brain scans to classify tumor types using a custom CNN.")
+st.markdown("Upload MRI brain scans to classify tumor types using a custom Convolutional Neural Network (CNN).")
 
 with st.sidebar:
     st.header("About")
@@ -644,7 +644,7 @@ with tab1:
         )
 
     with col2:
-        show_gradcam = st.checkbox("Show Grad-CAM visualization", value=False, help="Highlight regions the model focused on for classification")
+        show_gradcam = st.checkbox("Show Gradient-weighted Class Activation Mapping (Grad-CAM) visualization", value=False, help="Highlight regions the model focused on for classification")
 
     st.markdown("---")
 

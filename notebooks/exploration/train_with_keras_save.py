@@ -15,14 +15,14 @@ from pathlib import Path
 # Medical Priority Weights
 # Based on clinical severity and importance of correct detection
 CLASS_WEIGHTS = {
-    0: 3.0,   # glioma (malignant, aggressive - CRITICAL)
+    0: 5.0,   # glioma (malignant, aggressive - CRITICAL) - INCREASED
     1: 1.5,   # meningioma (usually benign)
     2: 3.0,   # notumor (must not miss cancer - CRITICAL)
     3: 2.0    # pituitary (serious but manageable)
 }
 
 # Corresponding weights for weighted recall calculation
-RECALL_WEIGHTS = [3.0, 1.5, 3.0, 2.0]  # [glioma, meningioma, notumor, pituitary]
+RECALL_WEIGHTS = [5.0, 1.5, 3.0, 2.0]  # [glioma, meningioma, notumor, pituitary]
 
 
 # Custom Weighted Recall Metric
@@ -145,18 +145,31 @@ inputs = keras.Input(shape=IMG_SIZE + (1,))
 x = data_augmentation(inputs)
 x = layers.Rescaling(1./255)(x)
 
-# Convolutional layers
-x = layers.Conv2D(32, 3, padding="same", activation="relu")(x)
-x = layers.MaxPooling2D()(x)
-x = layers.Conv2D(64, 3, padding="same", activation="relu")(x)
-x = layers.MaxPooling2D()(x)
-x = layers.Conv2D(128, 3, padding="same", activation="relu")(x)
-x = layers.MaxPooling2D()(x)
-x = layers.Conv2D(128, 3, padding="same", activation="relu")(x)
+# Convolutional layers with Batch Normalization
+x = layers.Conv2D(32, 3, padding="same")(x)
+x = layers.BatchNormalization()(x)
+x = layers.Activation("relu")(x)
 x = layers.MaxPooling2D()(x)
 
+x = layers.Conv2D(64, 3, padding="same")(x)
+x = layers.BatchNormalization()(x)
+x = layers.Activation("relu")(x)
+x = layers.MaxPooling2D()(x)
+
+x = layers.Conv2D(128, 3, padding="same")(x)
+x = layers.BatchNormalization()(x)
+x = layers.Activation("relu")(x)
+x = layers.MaxPooling2D()(x)
+
+x = layers.Conv2D(128, 3, padding="same")(x)
+x = layers.BatchNormalization()(x)
+x = layers.Activation("relu")(x)
+x = layers.MaxPooling2D()(x)
+
+# Global Average Pooling instead of Flatten (reduces parameters)
+x = layers.GlobalAveragePooling2D()(x)
+
 # Dense layers
-x = layers.Flatten()(x)
 x = layers.Dense(256, activation="relu")(x)
 x = layers.Dropout(0.5)(x)
 x = layers.Dense(128, activation="relu")(x)
@@ -180,7 +193,7 @@ model.compile(
 
 print("\n" + "="*60)
 print("MEDICAL PRIORITY WEIGHTS:")
-print("  Glioma (malignant):     3.0x weight")
+print("  Glioma (malignant):     5.0x weight - HIGHEST PRIORITY")
 print("  Notumor (don't miss):   3.0x weight")
 print("  Pituitary (serious):    2.0x weight")
 print("  Meningioma (benign):    1.5x weight")

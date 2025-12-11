@@ -10,8 +10,7 @@ import tensorflow as tf
 from tensorflow import keras
 from pathlib import Path
 
-MODEL_PATH = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_improved"
-KERAS_MODEL_PATH = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_keras"
+MODEL_PATH = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_keras"
 
 LABEL_MAP = {
     0: "glioma",
@@ -24,23 +23,15 @@ TARGET_SIZE = (192, 192)
 CLIP_PCT = (1, 99)
 
 _model = None
-_keras_model = None
 
 def load_model():
-    """Load and cache the trained model"""
+    """Load and cache the trained model (Keras format for both predictions and Grad-CAM)"""
     global _model
     if _model is None:
-        loaded = tf.saved_model.load(str(MODEL_PATH))
-        _model = loaded.signatures['serving_default']
-    return _model
-
-def load_keras_model():
-    """Load and cache the model as a Keras model for Grad-CAM"""
-    global _keras_model
-    if _keras_model is None:
         # Load the Keras model directly
-        _keras_model = keras.models.load_model(str(KERAS_MODEL_PATH))
-    return _keras_model
+        # compile=False skips loading custom metrics (we only need architecture for inference)
+        _model = keras.models.load_model(str(MODEL_PATH), compile=False)
+    return _model
 
 def preprocess_image(image: np.ndarray) -> np.ndarray:
     """
@@ -79,8 +70,7 @@ def predict_single(image: np.ndarray) -> dict:
     processed = preprocess_image(image)
     batch = np.expand_dims(processed, axis=0)
 
-    output = model(input_1=tf.constant(batch, dtype=tf.float32))
-    predictions = output['output_0'].numpy()
+    predictions = model(batch).numpy()
 
     class_idx = int(np.argmax(predictions[0]))
     confidence = float(predictions[0][class_idx])
@@ -99,8 +89,7 @@ def predict_batch(images: list) -> list:
     model = load_model()
     processed = np.array([preprocess_image(img) for img in images])
 
-    output = model(input_1=tf.constant(processed, dtype=tf.float32))
-    predictions = output['output_0'].numpy()
+    predictions = model(processed).numpy()
 
     results = []
     for i, pred in enumerate(predictions):
@@ -135,7 +124,7 @@ def generate_gradcam(image: np.ndarray, class_idx: int = None) -> np.ndarray:
     Returns:
         Heatmap as numpy array (same size as preprocessed image)
     """
-    model = load_keras_model()
+    model = load_model()
     processed = preprocess_image(image)
     img_array = np.expand_dims(processed, axis=0)
 
