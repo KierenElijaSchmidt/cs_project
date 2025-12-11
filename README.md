@@ -132,7 +132,7 @@ data/brain-tumor-mri-dataset/
 
 #### Option 1: Train from Scratch (Recommended for Learning)
 
-If you want to train the model yourself (~20-30 minutes with GPU, longer with CPU):
+If you want to train the model yourself (~20-30 minutes with CPU):
 
 ```bash
 # First, preprocess the data
