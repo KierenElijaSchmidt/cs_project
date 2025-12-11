@@ -15,6 +15,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import plotly.express as px
 import plotly.graph_objects as go
+from sklearn.metrics import confusion_matrix, recall_score
 from prediction import predict_single, predict_batch, LABEL_MAP, generate_gradcam, apply_gradcam_overlay
 
 load_dotenv()
@@ -91,6 +92,68 @@ def create_pie_chart(data: dict, title: str):
     fig.update_layout(height=300, margin=dict(l=20, r=20, t=40, b=20))
     return fig
 
+def create_confusion_matrix(true_labels: list, predicted_labels: list):
+    """Create a confusion matrix heatmap"""
+    # Define the class order
+    class_names = ["glioma", "meningioma", "notumor", "pituitary"]
+
+    # Compute confusion matrix
+    cm = confusion_matrix(true_labels, predicted_labels, labels=class_names)
+
+    # Create heatmap
+    fig = go.Figure(data=go.Heatmap(
+        z=cm,
+        x=class_names,
+        y=class_names,
+        colorscale='Blues',
+        text=cm,
+        texttemplate='%{text}',
+        textfont={"size": 16},
+        hovertemplate='True: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>'
+    ))
+
+    fig.update_layout(
+        title='Confusion Matrix',
+        xaxis_title='Predicted Label',
+        yaxis_title='True Label',
+        height=500,
+        width=500,
+        xaxis={'side': 'bottom'},
+        yaxis={'autorange': 'reversed'}
+    )
+
+    return fig
+
+def calculate_weighted_recall(true_labels: list, predicted_labels: list):
+    """
+    Calculate weighted recall based on medical priorities.
+
+    Weights (clinical importance):
+    - Glioma: 3.0x (malignant, aggressive - CRITICAL)
+    - Notumor: 3.0x (must not miss cancer - CRITICAL)
+    - Pituitary: 2.0x (serious but manageable)
+    - Meningioma: 1.5x (usually benign)
+    """
+    # Define class order and weights
+    class_names = ["glioma", "meningioma", "notumor", "pituitary"]
+    class_weights = {"glioma": 3.0, "meningioma": 1.5, "notumor": 3.0, "pituitary": 2.0}
+
+    # Calculate per-class recall
+    recalls = {}
+    for class_name in class_names:
+        # True positives: correctly identified as this class
+        tp = sum(1 for t, p in zip(true_labels, predicted_labels) if t == class_name and p == class_name)
+        # All actual instances of this class
+        total = sum(1 for t in true_labels if t == class_name)
+        recalls[class_name] = tp / total if total > 0 else 0.0
+
+    # Calculate weighted average
+    weighted_sum = sum(recalls[c] * class_weights[c] for c in class_names)
+    weight_total = sum(class_weights.values())
+    weighted_recall = weighted_sum / weight_total
+
+    return weighted_recall, recalls, class_weights
+
 def load_training_history():
     """Load training history from JSON file"""
     import json
@@ -101,12 +164,44 @@ def load_training_history():
     return None
 
 def create_learning_curves(history: dict):
-    """Create learning curve plots for accuracy and loss"""
+    """Create learning curve plots for weighted recall/accuracy and loss"""
     if not history:
-        return None, None
+        return None, None, None
 
     epochs = list(range(1, len(history['accuracy']) + 1))
 
+    # Check if weighted_recall is available (new model) or use accuracy (old model)
+    has_weighted_recall = 'weighted_recall' in history
+
+    if has_weighted_recall:
+        # New model with weighted recall
+        fig_recall = go.Figure()
+        fig_recall.add_trace(go.Scatter(
+            x=epochs, y=history['weighted_recall'],
+            mode='lines+markers',
+            name='Training Weighted Recall',
+            line=dict(color='#2E86AB', width=3),
+            marker=dict(size=8)
+        ))
+        fig_recall.add_trace(go.Scatter(
+            x=epochs, y=history['val_weighted_recall'],
+            mode='lines+markers',
+            name='Validation Weighted Recall',
+            line=dict(color='#A23B72', width=3, dash='dash'),
+            marker=dict(size=8)
+        ))
+        fig_recall.update_layout(
+            title='Weighted Recall Over Training (Primary Metric)',
+            xaxis_title='Epoch',
+            yaxis_title='Weighted Recall',
+            hovermode='x unified',
+            height=400,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+    else:
+        fig_recall = None
+
+    # Accuracy curve (always available)
     fig_acc = go.Figure()
     fig_acc.add_trace(go.Scatter(
         x=epochs, y=history['accuracy'],
@@ -122,8 +217,9 @@ def create_learning_curves(history: dict):
         line=dict(color='#A23B72', width=3, dash='dash'),
         marker=dict(size=8)
     ))
+    title = 'Model Accuracy Over Training' if has_weighted_recall else 'Model Accuracy Over Training (Primary Metric)'
     fig_acc.update_layout(
-        title='Model Accuracy Over Training',
+        title=title,
         xaxis_title='Epoch',
         yaxis_title='Accuracy',
         hovermode='x unified',
@@ -131,6 +227,7 @@ def create_learning_curves(history: dict):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
 
+    # Loss curve
     fig_loss = go.Figure()
     fig_loss.add_trace(go.Scatter(
         x=epochs, y=history['loss'],
@@ -155,7 +252,7 @@ def create_learning_curves(history: dict):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
 
-    return fig_acc, fig_loss
+    return fig_recall, fig_acc, fig_loss
 
 def generate_pdf_report(report_text: str, images: list, file_names: list, results: list) -> bytes:
     """Generate a PDF report with images and classifications"""
@@ -346,18 +443,69 @@ with tab2:
                 st.plotly_chart(fig, use_container_width=True)
 
             with col3:
+                # Calculate weighted recall (primary metric)
+                predicted_labels = [r["label"] for r in results]
+                weighted_recall, class_recalls, class_weights = calculate_weighted_recall(true_labels, predicted_labels)
+
+                # Also show accuracy for reference
                 correct = sum(1 for r, t in zip(results, true_labels) if r["label"] == t)
                 accuracy = correct / len(results)
 
+                st.metric("Weighted Recall (Primary)", f"{weighted_recall:.0%}",
+                         help="Prioritizes critical classes: Glioma (3.0x), Notumor (3.0x), Pituitary (2.0x), Meningioma (1.5x)")
                 st.metric("Overall Accuracy", f"{accuracy:.0%}")
                 st.metric("Correct Predictions", f"{correct}/{len(results)}")
 
-                st.markdown("**Per-class Performance:**")
-                for tumor_type in ["notumor", "meningioma", "pituitary", "glioma"]:
+                st.markdown("**Per-class Recall (with weights):**")
+                st.caption("Higher weights = more medically critical")
+                for tumor_type in ["glioma", "meningioma", "notumor", "pituitary"]:
                     type_total = sum(1 for t in true_labels if t == tumor_type)
                     if type_total > 0:
                         type_correct = sum(1 for r, t in zip(results, true_labels) if t == tumor_type and r["label"] == tumor_type)
-                        st.write(f"{tumor_type}: {type_correct}/{type_total}")
+                        type_recall = type_correct / type_total
+                        weight = class_weights[tumor_type]
+                        weight_indicator = "[!] " if weight >= 3.0 else ("[*] " if weight >= 2.0 else "")
+                        st.write(f"{weight_indicator}{tumor_type}: {type_recall:.0%} ({type_correct}/{type_total}) • weight: {weight}x")
+
+            st.markdown("---")
+            st.subheader("Understanding Weighted Recall")
+
+            with st.expander("ℹ️ Why use weighted recall instead of accuracy?", expanded=False):
+                st.markdown("""
+                **Medical Priority Approach:**
+
+                Not all misclassifications are equally serious in medical diagnosis. Our model uses **weighted recall**
+                to reflect clinical priorities:
+
+                **Critical Classes (3.0x weight):**
+                - **Glioma**: Malignant, aggressive tumor requiring immediate treatment
+                - **Notumor**: Must not miss cancer (false negatives are dangerous)
+
+                **Important Classes:**
+                - **Pituitary** (2.0x): Serious but more manageable
+                - **Meningioma** (1.5x): Usually benign, slowest growing
+
+                **Formula:**
+                ```
+                Weighted Recall = (3.0×glioma_recall + 1.5×meningioma_recall +
+                                  3.0×notumor_recall + 2.0×pituitary_recall) / 9.5
+                ```
+
+                This ensures the model prioritizes detecting the most critical conditions.
+                """)
+
+            st.markdown("---")
+            st.subheader("Confusion Matrix")
+
+            st.markdown("""
+            The confusion matrix shows how the model's predictions compare to the true labels.
+            Each cell shows the count of predictions: rows represent true labels, columns represent predicted labels.
+            Diagonal cells (top-left to bottom-right) represent correct predictions.
+            """)
+
+            predicted_labels = [r["label"] for r in results]
+            fig = create_confusion_matrix(true_labels, predicted_labels)
+            st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("---")
         st.subheader("Training Learning Curves")
@@ -372,24 +520,49 @@ with tab2:
 
         history = load_training_history()
         if history:
-            fig_acc, fig_loss = create_learning_curves(history)
+            fig_recall, fig_acc, fig_loss = create_learning_curves(history)
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.plotly_chart(fig_acc, use_container_width=True)
-            with col2:
-                st.plotly_chart(fig_loss, use_container_width=True)
+            # Show weighted recall curve if available (new model), otherwise show accuracy first
+            if fig_recall:
+                st.plotly_chart(fig_recall, use_container_width=True)
 
-            final_train_acc = history['accuracy'][-1]
-            final_val_acc = history['val_accuracy'][-1]
-            gap = final_train_acc - final_val_acc
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.plotly_chart(fig_acc, use_container_width=True)
+                with col2:
+                    st.plotly_chart(fig_loss, use_container_width=True)
 
-            if gap < 0.05:
-                st.success(f"Excellent generalization: Training-validation gap is only {gap*100:.1f}%")
-            elif gap < 0.10:
-                st.info(f"Good generalization: Training-validation gap is {gap*100:.1f}%")
+                # Generalization check using weighted recall
+                final_train_recall = history['weighted_recall'][-1]
+                final_val_recall = history['val_weighted_recall'][-1]
+                gap = final_train_recall - final_val_recall
+
+                st.markdown("**Generalization Analysis:**")
+                if gap < 0.05:
+                    st.success(f"Excellent generalization: Weighted recall gap is only {gap*100:.1f}%")
+                elif gap < 0.10:
+                    st.info(f"Good generalization: Weighted recall gap is {gap*100:.1f}%")
+                else:
+                    st.warning(f"Some overfitting detected: Weighted recall gap is {gap*100:.1f}%")
+
             else:
-                st.warning(f"Some overfitting detected: Training-validation gap is {gap*100:.1f}%")
+                # Old model without weighted recall
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.plotly_chart(fig_acc, use_container_width=True)
+                with col2:
+                    st.plotly_chart(fig_loss, use_container_width=True)
+
+                final_train_acc = history['accuracy'][-1]
+                final_val_acc = history['val_accuracy'][-1]
+                gap = final_train_acc - final_val_acc
+
+                if gap < 0.05:
+                    st.success(f"Excellent generalization: Training-validation gap is only {gap*100:.1f}%")
+                elif gap < 0.10:
+                    st.info(f"Good generalization: Training-validation gap is {gap*100:.1f}%")
+                else:
+                    st.warning(f"Some overfitting detected: Training-validation gap is {gap*100:.1f}%")
         else:
             st.info("Training history not available. Run the training script to generate learning curves.")
 

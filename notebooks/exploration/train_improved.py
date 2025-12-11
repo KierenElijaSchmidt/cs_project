@@ -7,6 +7,7 @@ import json
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.metrics import Recall
 from pathlib import Path
 
 # Configuration
@@ -85,22 +86,29 @@ model = keras.Model(inputs, outputs, name="brain_tumor_cnn")
 model.summary()
 
 # Compile model
+# Using Recall as primary metric (macro-averaged across all classes)
+# Accuracy is included for reference
 model.compile(
     optimizer=keras.optimizers.Adam(learning_rate=0.001),
     loss="sparse_categorical_crossentropy",
-    metrics=["accuracy"],
+    metrics=[
+        Recall(name='recall', average='macro'),  # Primary metric
+        "accuracy",  # Secondary metric for reference
+    ],
 )
 
 # Callbacks for training optimization
+# Monitor validation recall (higher is better) for early stopping
 callbacks = [
     keras.callbacks.EarlyStopping(
-        monitor="val_loss",
+        monitor="val_recall",
+        mode="max",  # Maximize recall (higher is better)
         patience=5,
         restore_best_weights=True,
         verbose=1
     ),
     keras.callbacks.ReduceLROnPlateau(
-        monitor="val_loss",
+        monitor="val_loss",  # Keep monitoring loss for learning rate reduction
         factor=0.5,
         patience=3,
         min_lr=1e-6,
@@ -119,7 +127,11 @@ history = model.fit(
 
 # Evaluate
 print("\nEvaluating on test set...")
-test_loss, test_acc = model.evaluate(test_ds)
+test_results = model.evaluate(test_ds)
+test_loss = test_results[0]
+test_recall = test_results[1]  # Recall is first metric
+test_acc = test_results[2]     # Accuracy is second metric
+print(f"Test recall: {test_recall:.4f} ({test_recall*100:.2f}%)")
 print(f"Test accuracy: {test_acc:.4f} ({test_acc*100:.2f}%)")
 print(f"Test loss: {test_loss:.4f}")
 
@@ -136,20 +148,28 @@ with open(history_path, 'w') as f:
 print(f"Training history saved to: {history_path}")
 
 # Print summary
+final_train_recall = history.history['recall'][-1]
+final_val_recall = history.history['val_recall'][-1]
 final_train_acc = history.history['accuracy'][-1]
 final_val_acc = history.history['val_accuracy'][-1]
 
-print(f"\nTraining accuracy: {final_train_acc:.4f} ({final_train_acc*100:.2f}%)")
+print(f"\n=== Primary Metric: Recall ===")
+print(f"Training recall: {final_train_recall:.4f} ({final_train_recall*100:.2f}%)")
+print(f"Validation recall: {final_val_recall:.4f} ({final_val_recall*100:.2f}%)")
+print(f"Test recall: {test_recall:.4f} ({test_recall*100:.2f}%)")
+print(f"Train-val gap: {(final_train_recall - final_val_recall)*100:.2f}%")
+
+print(f"\n=== Secondary Metric: Accuracy ===")
+print(f"Training accuracy: {final_train_acc:.4f} ({final_train_acc*100:.2f}%)")
 print(f"Validation accuracy: {final_val_acc:.4f} ({final_val_acc*100:.2f}%)")
 print(f"Test accuracy: {test_acc:.4f} ({test_acc*100:.2f}%)")
-print(f"Train-val gap: {(final_train_acc - final_val_acc)*100:.2f}%")
 
-if final_train_acc - final_val_acc > 0.05:
-    print("Warning: Gap > 5%, possible overfitting")
+if final_train_recall - final_val_recall > 0.05:
+    print("\nWarning: Recall gap > 5%, possible overfitting")
 else:
-    print("Good generalization")
+    print("\nGood generalization")
 
-if test_acc >= 0.90:
-    print(f"Target achieved: {test_acc*100:.2f}% >= 90%")
+if test_recall >= 0.90:
+    print(f"Target achieved: {test_recall*100:.2f}% recall >= 90%")
 else:
-    print(f"Below target: {test_acc*100:.2f}% < 90%")
+    print(f"Below target: {test_recall*100:.2f}% recall < 90%")
