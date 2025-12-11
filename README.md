@@ -2,6 +2,8 @@
 
 A deep learning application for classifying brain MRI scans into four categories: glioma, meningioma, pituitary tumor, and no tumor. Built with TensorFlow and Streamlit, achieving ~90% test accuracy.
 
+**Pre-trained models available on [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models)**
+
 ## Features
 
 - CNN-based classification with custom architecture
@@ -22,6 +24,8 @@ A deep learning application for classifying brain MRI scans into four categories
 - NumPy and Pandas for data processing
 
 ## Installation
+
+**Note:** This repository does not include the trained models due to file size. You can download pre-trained models from [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models) or train them yourself (see Model Setup section).
 
 ### Prerequisites
 
@@ -92,22 +96,37 @@ data/brain-tumor-mri-dataset/
     └── pituitary/
 ```
 
-### Model Training
+### Model Setup
 
-The trained models are required to run the application but are not included in the repository. You need to train them:
+The trained models are required to run the application but are not included in the repository. You have two options:
+
+**Option 1: Download Pre-trained Models (Recommended)**
+
+Download the pre-trained models from Hugging Face:
+
+```bash
+cd notebooks/exploration
+wget https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models/resolve/main/neurosight-models.tar.gz
+tar -xzf neurosight-models.tar.gz
+rm neurosight-models.tar.gz
+```
+
+This extracts the models to `brain_tumor_cnn_improved/` and `brain_tumor_cnn_keras/`.
+
+**Option 2: Train from Scratch**
+
+If you want to train the models yourself (~20-30 minutes on CPU):
 
 ```bash
 # Preprocess the data first
 cd notebooks/exploration
 jupyter notebook Preproc.ipynb  # Run all cells
 
-# Train the model (takes ~20-30 minutes on CPU)
+# Train the model
 python train_improved.py
 ```
 
-This creates the model files in `notebooks/exploration/brain_tumor_cnn_improved/` and `brain_tumor_cnn_keras/`.
-
-Verify everything is set up:
+**Verify Setup:**
 ```bash
 ls data/brain-tumor-mri-dataset/Testing/
 ls notebooks/exploration/brain_tumor_cnn_improved/
@@ -254,6 +273,7 @@ This is an educational project and should not be used for medical diagnosis. The
 ## Acknowledgments
 
 - Dataset: Masoud Nickparvar on Kaggle
+- Pre-trained models: Available on [Hugging Face](https://huggingface.co/kierenschmidthsg/neurosight-brain-tumor-models)
 - AI integration: Anthropic Claude API
 - Frameworks: Streamlit and TensorFlow
 
