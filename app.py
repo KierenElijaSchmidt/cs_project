@@ -584,7 +584,14 @@ with tab1:
                     import anthropic
                     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-                    context = "Generate a medical report for these MRI scan results. Use professional formatting with bullet points.\n\n"
+                    # Get current date
+                    current_date = datetime.now().strftime('%B %d, %Y')
+
+                    context = f"Generate a medical report for these MRI scan results dated {current_date}. Use professional formatting with bullet points.\n\n"
+                    context += "IMPORTANT FORMATTING RULES:\n"
+                    context += "- Every bullet point must start on a new line\n"
+                    context += "- Never put bullet points on the same line as other text\n"
+                    context += "- Always put a blank line before starting a bulleted list\n\n"
                     context += "**Scan Results:**\n\n"
                     for i, result in enumerate(results):
                         context += f"Scan {i+1} ({file_names[i]}): "
@@ -594,28 +601,37 @@ with tab1:
                             context += f". Alternative: {sorted_probs[1][0].title()} ({sorted_probs[1][1]:.1%})"
                         context += "\n"
 
-                    context += """
+                    context += f"""
 Include these sections with bullet points:
 
+**Report Date:** {current_date}
+
 ### Patient Scan Summary
+
 - List each scan with findings
 - Overall assessment
 
 ### Findings
+
 - Detailed findings per scan
 - Confidence levels
 
 ### Clinical Significance
+
 - Implications for patient care
 - Prognosis
 
 ### Recommendations
+
 - Next steps
 - Specialist referrals
 - Follow-up requirements
 
 ### Medical Disclaimer
+
 > This analysis is AI-assisted and requires review by a qualified medical specialist before clinical decisions.
+
+REMEMBER: Each bullet point MUST be on its own line with a blank line before the list starts.
 """
 
                     response = client.messages.create(
