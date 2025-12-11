@@ -100,15 +100,24 @@ def create_confusion_matrix(true_labels: list, predicted_labels: list):
     # Compute confusion matrix
     cm = confusion_matrix(true_labels, predicted_labels, labels=class_names)
 
+    # Dark mode friendly colorscale: dark purple to bright cyan
+    colorscale = [
+        [0.0, '#1a1a2e'],  # Very dark blue-purple (low values)
+        [0.25, '#16213e'], # Dark blue
+        [0.5, '#0f3460'],  # Medium blue
+        [0.75, '#1e88e5'], # Bright blue
+        [1.0, '#42a5f5']   # Bright cyan (high values)
+    ]
+
     # Create heatmap
     fig = go.Figure(data=go.Heatmap(
         z=cm,
         x=class_names,
         y=class_names,
-        colorscale='Blues',
+        colorscale=colorscale,
         text=cm,
         texttemplate='%{text}',
-        textfont={"size": 16},
+        textfont={"size": 16, "color": "white"},  # White text for better visibility
         hovertemplate='True: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>'
     ))
 
@@ -119,7 +128,9 @@ def create_confusion_matrix(true_labels: list, predicted_labels: list):
         height=500,
         width=500,
         xaxis={'side': 'bottom'},
-        yaxis={'autorange': 'reversed'}
+        yaxis={'autorange': 'reversed'},
+        paper_bgcolor='rgba(0,0,0,0)',  # Transparent background
+        plot_bgcolor='rgba(0,0,0,0)'    # Transparent plot area
     )
 
     return fig
@@ -157,7 +168,7 @@ def calculate_weighted_recall(true_labels: list, predicted_labels: list):
 def load_training_history():
     """Load training history from JSON file"""
     import json
-    history_path = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_improved" / "training_history.json"
+    history_path = Path(__file__).parent / "notebooks" / "exploration" / "brain_tumor_cnn_keras" / "training_history.json"
     if history_path.exists():
         with open(history_path, 'r') as f:
             return json.load(f)
